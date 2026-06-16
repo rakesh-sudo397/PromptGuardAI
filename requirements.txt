@@ -1,0 +1,8 @@
+datasets==2.20.0
+pandas
+numpy
+matplotlib
+seaborn
+scikit-learn
+jupyter
+transformers
