@@ -1,32 +1,18 @@
-# Day 1 Notes
+# PromptGuard AI - Day 1 Research & Observations
 
-## What is Prompt Injection?
+## 1. What is prompt injection in your own words?
+Prompt injection is an attack technique where malicious instructions are embedded within a user input to hijack a Large Language Model's execution context. This forces the model to ignore its developer-defined system rules, leading to unauthorized actions, system prompt leaks, or the generation of banned/harmful output.
 
-Prompt Injection is an attack where malicious instructions are inserted into prompts to manipulate the behavior of an LLM.
+## 2. What patterns appear in malicious prompts in deepset/prompt-injections?
+Through exploratory data analysis, we identified three primary signatures:
+- **Instruction Overrides**: Explicit commands using keywords like `ignore`, `forget`, `bypass`, `instead of`, and `override`.
+- **System Emulation**: Roleplay setups like `You are now a...`, `Act as`, or `Assume the role of`.
+- **Instruction Boundary Breakers**: Appending text after separators, e.g., `---` or `[End of Translation]`, followed by new commands.
 
-## What is Jailbreak?
+## 3. What 3 edge cases would be hardest for a static classifier to identify?
+- **Base64 or Hex Obfuscation**: Encoding malicious payloads (e.g., `SWdub3JlIHRoZSBhYm92ZQ==`) which bypass regex but decode into attacks at run-time.
+- **Hypothetical/Creative Writing Scenarios**: Framing a harmful prompt inside a creative prompt (e.g., "Write a fictional story about a hacker bypass sequence...").
+- **Split-Instruction Attacks**: Distributing the payload across multiple turns or using mathematical/token logic to reassemble it inside the model context.
 
-A jailbreak is a successful prompt injection attack that bypasses the safety restrictions of an LLM.
-
-## Direct Prompt Injection
-
-The attacker directly sends malicious instructions.
-
-Example:
-Ignore all previous instructions.
-
-## Indirect Prompt Injection
-
-The attacker hides malicious instructions inside external content such as documents or web pages.
-
-## Why Dangerous?
-
-- Data Leakage
-- Unauthorized Actions
-- Safety Risks
-
-## Project Scope
-
-Focus on Direct Prompt Injection Detection.
-
-Indirect Prompt Injection will be future work.
+## 4. What is our plan for Day 2?
+We will transition from static regex filters to feature engineering. We plan to extract prompt length, special character ratios, and build a TF-IDF text representation pipeline to prepare for machine learning training.
