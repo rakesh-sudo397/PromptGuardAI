@@ -1,27 +1,14 @@
 # PromptGuard AI
 
-An AI-powered prompt injection detection system for Large Language Models (LLMs).
+An AI security platform designed to detect and block prompt injection and jailbreak attacks before they reach a Large Language Model (LLM).
 
-## Problem
+## Project Details
+- **Team**: 4 Members (2 Data Science, 2 Cybersecurity)
+- **Tech Stack**: Python, Pandas, Scikit-Learn, Jupyter Notebook, FastAPI
+- **Dataset**: `deepset/prompt-injections` (HuggingFace)
+- **Current Status**: Day 1 — Data Exploration & Baseline Engine
 
-Large Language Models are vulnerable to prompt injection attacks and jailbreak attempts.
-
-## Goal
-
-Detect unsafe prompts before they reach the LLM.
-
-## Team
-
-- Data Science
-- Cyber Security
-
-## Tech Stack
-
-- Python
-- Scikit-learn
-- TF-IDF
-- Logistic Regression
-
-## Status
-
-Day 1: Research & Dataset Analysis
+## Folder Structure
+- `docs/`: Design documents, threat models, and logs.
+- `notebooks/`: Exploratory Data Analysis (EDA) and experimental model training.
+- `src/`: Core codebase for the classifier rules and prediction engine.

@@ -1,8 +1,6 @@
-datasets==2.20.0
-pandas
-numpy
-matplotlib
-seaborn
-scikit-learn
-jupyter
-transformers
+datasets>=2.12.0
+pandas>=1.5.0
+scikit-learn>=1.2.0
+notebook>=6.5.0
+matplotlib>=3.7.0
+seaborn>=0.12.0
