@@ -8,7 +8,7 @@ from src.preprocessing import clean_text, extract_metadata_features
 
 def test_pipeline():
     print("=========================================")
-    print("TESTING PREPROCESSING PIPELINE (DAY 2)")
+    print("TESTING PREPROCESSING PIPELINE (DAY 4)")
     print("=========================================")
     
     test_prompts = [
