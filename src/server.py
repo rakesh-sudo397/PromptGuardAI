@@ -1,8 +1,7 @@
 """
 Filename: src/server.py
 Action: MODIFY
-Purpose: Updated TemplateResponse invocations to follow the modern Starlette 0.28.0+ 
-         parameter signature (passing 'request' as the first positional/keyword argument).
+Purpose: FastAPI backend server with SQLite logs endpoint and API Key validation.
 """
 
 import os
@@ -17,7 +16,7 @@ from typing import Dict, Any
 # Adjust path to find modules from the root PromptGuard-AI folder when executing directly
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
-from fastapi import FastAPI, Request, HTTPException, status
+from fastapi import FastAPI, Request, HTTPException, status, Header
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -130,19 +129,16 @@ class ScanRequest(BaseModel):
 
 @app.get("/", response_class=HTMLResponse)
 async def serve_root(request: Request):
-    # Passes request object as first argument
     return templates.TemplateResponse(request=request, name="sandbox.html")
 
 
 @app.get("/sandbox", response_class=HTMLResponse)
 async def serve_sandbox(request: Request):
-    # Passes request object as first argument
     return templates.TemplateResponse(request=request, name="sandbox.html")
 
 
 @app.get("/dashboard", response_class=HTMLResponse)
 async def serve_dashboard(request: Request):
-    # Passes request object as first argument
     return templates.TemplateResponse(request=request, name="dashboard.html")
 
 
@@ -150,16 +146,24 @@ async def serve_dashboard(request: Request):
 # REST API V1 ROUTES
 # ==========================================
 
+# Secret developer API Key
+API_KEY = "pg_live_key_98213"
+
 @app.post("/api/v1/scan")
-async def scan_prompt(payload: ScanRequest):
+async def scan_prompt(payload: ScanRequest, x_api_key: str = Header(None)):
     """
     Accepts prompt strings, invokes the hybrid rules/ML classifier, 
     records latency, logs audit logs, and returns telemetry response.
     """
+    if x_api_key != API_KEY:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or missing API key."
+        )
+
     start_time = time.perf_counter()
     
     try:
-        # Call classifier module logic from src/classifier.py
         result = scan_prompt_hybrid(payload.prompt)
     except Exception as e:
         logger.error("Classifier subsystem failed: %s", e)
@@ -168,17 +172,14 @@ async def scan_prompt(payload: ScanRequest):
             detail="Error occurred inside the classification engine."
         )
 
-    # Compute duration metric
     latency_ms = round((time.perf_counter() - start_time) * 1000.0, 2)
     
-    # Map variables from classifier output schema
     is_safe = result.get("is_safe", True)
     is_blocked_val = 0 if is_safe else 1
     risk_score = float(result.get("risk_score", 0.0))
     category = str(result.get("category", "Clean"))
     timestamp = datetime.datetime.now(datetime.timezone.utc).isoformat()
     
-    # Write audit log row to SQLite db
     try:
         with get_db_connection() as conn:
             cursor = conn.cursor()
@@ -193,7 +194,6 @@ async def scan_prompt(payload: ScanRequest):
     except sqlite3.Error as db_err:
         logger.error("Failed to commit scan transaction records: %s", db_err)
     
-    # Merge classification outcomes with measured latency
     response_payload = {**result, "latency_ms": latency_ms}
     return JSONResponse(content=response_payload, status_code=status.HTTP_200_OK)
 
@@ -207,7 +207,6 @@ async def get_metrics():
         with get_db_connection() as conn:
             cursor = conn.cursor()
             
-            # Read aggregations (handles empty rows gracefully)
             cursor.execute("""
                 SELECT 
                     COUNT(*) as total_scans,
@@ -223,7 +222,6 @@ async def get_metrics():
             average_risk = round(summary_row["average_risk"] or 0.0, 4)
             average_latency = round(summary_row["average_latency"] or 0.0, 2)
             
-            # Group distributions by threat class category
             cursor.execute("""
                 SELECT category, COUNT(*) as count
                 FROM scans
@@ -247,6 +245,31 @@ async def get_metrics():
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Error retrieving analytics datasets."
+        )
+
+
+@app.get("/api/v1/logs")
+async def get_recent_logs():
+    """
+    Retrieves the last 10 scan log entries.
+    """
+    try:
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT timestamp, prompt_text, risk_score, is_blocked, category, latency_ms
+                FROM scans
+                ORDER BY id DESC
+                LIMIT 10
+            """)
+            rows = cursor.fetchall()
+            logs = [dict(row) for row in rows]
+            return JSONResponse(content=logs, status_code=status.HTTP_200_OK)
+    except sqlite3.Error as e:
+        logger.error("Failed to query scan logs: %s", e)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Database read error."
         )
 
 
