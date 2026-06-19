@@ -110,6 +110,35 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+# In-memory dictionary to track rate limits per client IP
+RATE_LIMIT_RECORD = {} # key: client_ip, value: list of timestamps
+REQUEST_LIMIT = 10     # Max requests
+WINDOW_SECONDS = 10    # In 10 seconds
+
+@app.middleware("http")
+async def rate_limiting_middleware(request: Request, call_next):
+    # Skip assets and HTML page views from rate limit check
+    if not request.url.path.startswith("/api/"):
+        return await call_next(request)
+        
+    client_ip = request.client.host
+    now = time.time()
+    
+    if client_ip not in RATE_LIMIT_RECORD:
+        RATE_LIMIT_RECORD[client_ip] = []
+        
+    # Filter out timestamps older than the sliding window
+    RATE_LIMIT_RECORD[client_ip] = [t for t in RATE_LIMIT_RECORD[client_ip] if now - t < WINDOW_SECONDS]
+    
+    if len(RATE_LIMIT_RECORD[client_ip]) >= REQUEST_LIMIT:
+        return JSONResponse(
+            status_code=429,
+            content={"detail": "Too many requests. Please wait before scanning again."}
+        )
+        
+    # Record request time
+    RATE_LIMIT_RECORD[client_ip].append(now)
+    return await call_next(request)
 
 # Mounting static files at /static
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
@@ -143,7 +172,7 @@ async def serve_dashboard(request: Request):
 
 
 # ==========================================
-# REST API V1 ROUTES
+# REST API V1 ROUTES                                                                                                                                                                                     
 # ==========================================
 
 # 1. Define the secret developer API Key
