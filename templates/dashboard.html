@@ -1,0 +1,179 @@
+<!--
+Filename: templates/dashboard.html
+Action: CREATE
+Purpose: Analytics overview console of PromptGuard telemetry logs.
+-->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PromptGuard AI - Analytics</title>
+    <style>
+        :root {
+            --bg: #0b0f19;
+            --card-bg: #151d30;
+            --txt: #f1f5f9;
+            --accent: #2563eb;
+            --border: #1e293b;
+        }
+        body {
+            font-family: system-ui, -apple-system, sans-serif;
+            background-color: var(--bg);
+            color: var(--txt);
+            margin: 0;
+            padding: 2.5rem;
+            display: flex;
+            justify-content: center;
+        }
+        .wrapper {
+            width: 100%;
+            max-width: 1000px;
+        }
+        .navigation {
+            display: flex;
+            gap: 1rem;
+            margin-bottom: 2rem;
+        }
+        .navigation a {
+            color: #64748b;
+            text-decoration: none;
+            padding: 0.5rem 1.2rem;
+            border-radius: 0.5rem;
+            background-color: var(--card-bg);
+            transition: all 0.2s;
+        }
+        .navigation a.active, .navigation a:hover {
+            color: var(--txt);
+            background-color: var(--accent);
+        }
+        .metrics-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 1.5rem;
+            margin-bottom: 2rem;
+        }
+        .stat-card {
+            background-color: var(--card-bg);
+            border: 1px solid var(--border);
+            border-radius: 0.75rem;
+            padding: 1.5rem;
+        }
+        .stat-title {
+            color: #64748b;
+            font-size: 0.75rem;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            margin-bottom: 0.5rem;
+        }
+        .stat-value {
+            font-size: 2.2rem;
+            font-weight: bold;
+        }
+        .table-card {
+            background-color: var(--card-bg);
+            border: 1px solid var(--border);
+            border-radius: 0.75rem;
+            padding: 1.5rem;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 1rem;
+        }
+        th, td {
+            text-align: left;
+            padding: 0.75rem;
+            border-bottom: 1px solid var(--border);
+        }
+        th {
+            color: #64748b;
+            font-weight: bold;
+            font-size: 0.85rem;
+        }
+    </style>
+</head>
+<body>
+    <div class="wrapper">
+        <div class="navigation">
+            <a href="/sandbox">Sandbox Console</a>
+            <a href="/dashboard" class="active">Analytics Dashboard</a>
+        </div>
+        <h1>PromptGuard Security Analytics</h1>
+        <p style="color: #64748b; margin-top: -0.5rem; margin-bottom: 2rem;">Real-time threat statistics, database size, and latency parameters.</p>
+
+        <div class="metrics-grid">
+            <div class="stat-card">
+                <div class="stat-title">Total Scans</div>
+                <div class="stat-value" id="valTotal">0</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-title">Blocked Attacks</div>
+                <div class="stat-value" id="valBlocked" style="color: #f43f5e;">0</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-title">Mean Risk Score</div>
+                <div class="stat-value" id="valAvgRisk">0%</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-title">Average Latency</div>
+                <div class="stat-value" id="valAvgLatency">0 ms</div>
+            </div>
+        </div>
+
+        <div class="table-card">
+            <h2>Threat Distribution by Category</h2>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Category</th>
+                        <th>Occurrences</th>
+                    </tr>
+                </thead>
+                <tbody id="tblDistributionBody">
+                    <tr>
+                        <td colspan="2" style="text-align: center; color: #64748b;">Waiting for data...</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <script>
+        async function fetchSystemStats() {
+            try {
+                const res = await fetch('/api/v1/metrics');
+                const data = await res.json();
+                
+                document.getElementById('valTotal').innerText = data.total_scans;
+                document.getElementById('valBlocked').innerText = data.blocked_scans;
+                document.getElementById('valAvgRisk').innerText = (data.average_risk * 100).toFixed(2) + '%';
+                document.getElementById('valAvgLatency').innerText = data.average_latency + ' ms';
+                
+                const tableBody = document.getElementById('tblDistributionBody');
+                tableBody.innerHTML = '';
+                
+                const categories = Object.keys(data.threat_distribution);
+                if (categories.length === 0) {
+                    tableBody.innerHTML = `<tr><td colspan="2" style="text-align: center; color: #64748b;">No scan telemetry logged.</td></tr>`;
+                    return;
+                }
+
+                categories.forEach(cat => {
+                    const row = document.createElement('tr');
+                    row.innerHTML = `
+                        <td><strong>${cat}</strong></td>
+                        <td>${data.threat_distribution[cat]}</td>
+                    `;
+                    tableBody.appendChild(row);
+                });
+            } catch (err) {
+                console.error("Dashboard error: ", err);
+            }
+        }
+        
+        fetchSystemStats();
+        setInterval(fetchSystemStats, 10000); // 10s auto-refresh
+    </script>
+</body>
+</html>

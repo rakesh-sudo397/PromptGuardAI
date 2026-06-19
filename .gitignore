@@ -21,3 +21,10 @@ data/raw/
 # IDEs
 .vscode/
 .idea/
+
+# Virtual environment (dot prefix)
+.venv/
+
+# SQLite databases and audit logs
+data/*.db
+data/promptguard.db
