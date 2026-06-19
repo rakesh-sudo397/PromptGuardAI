@@ -96,12 +96,17 @@
             scanBtn.innerText = 'Evaluating...';
             scanBtn.disabled = true;
 
-            try {
-                const res = await fetch('/api/v1/scan', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ prompt: promptText })
-                });
+        try {
+            const res = await fetch("/api/v1/scan", {
+                method: 'POST',
+                headers: { 
+                    'Content-Type': 'application/json',
+                    'X-API-Key': 'pg_live_key_98213'
+                },
+                body: JSON.stringify({ prompt: promptText })
+            });
+
+               
                 
                 const payload = await res.json();
                 
