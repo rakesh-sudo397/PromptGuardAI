@@ -1,158 +1,194 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>PromptGuard AI - Sandbox Console</title>
-    <link rel="stylesheet" href="/static/css/style.css">
-    <style>
-        .badge {
-            padding: 0.4rem 1rem;
-            border-radius: 9999px;
-            font-weight: bold;
-            font-size: 0.8rem;
-            text-transform: uppercase;
-        }
-        .bg-red { background-color: var(--rose-gradient); color: white; }
-        .bg-green { background-color: #10b981; color: white; }
-        .stats-grid {
-            display: grid;
-            grid-template-columns: repeat(3, 1fr);
-            gap: 1.5rem;
-            margin-top: 1.5rem;
-        }
-        .stat-box {
-            background-color: var(--bg-dark);
-            padding: 1.2rem;
-            border-radius: 12px;
-            border: 1px solid var(--border-color);
-        }
-        .stat-label {
-            font-size: 0.75rem;
-            color: var(--text-secondary);
-            text-transform: uppercase;
-            letter-spacing: 0.05em;
-        }
-        .stat-val {
-            font-size: 1.25rem;
-            font-weight: bold;
-            margin-top: 0.5rem;
-        }
-    </style>
-</head>
-<body>
-    <div class="container">
-        <div class="tabs">
-            <a href="/sandbox" class="tab-btn active">Sandbox Console</a>
-            <a href="/dashboard" class="tab-btn">Analytics Dashboard</a>
-        </div>
-        
-        <div class="card">
-            <h1>PromptGuard Security Sandbox</h1>
-            <p style="color: var(--text-secondary); margin-bottom: 2rem;">Test prompts in real-time to analyze how rules and classifiers handle threats.</p>
+{% extends "base.html" %}
 
-            <textarea id="txtPrompt" placeholder="Write standard text or inject malicious jailbreak patterns to test..."></textarea>
-            <button class="btn-primary" onclick="executeSecurityCheck()">Execute Guard Scan</button>
+{% block title %}PromptGuard AI - Sandbox Console{% endblock %}
 
-            <!-- Output Display Card -->
-            <div id="pnlOutput" class="alert" style="display: none; background: rgba(0, 0, 0, 0.2); border: 1px solid var(--border-color);">
-                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
-                    <h3 style="margin: 0; font-size: 1.4rem;">Analysis Verdict</h3>
-                    <span id="lblDecision" class="badge"></span>
-                </div>
-                
-                <div class="stats-grid">
-                    <div class="stat-box">
-                        <div class="stat-label">Identified Threat Class</div>
-                        <div class="stat-val" id="valCategory">-</div>
-                    </div>
-                    <div class="stat-box">
-                        <div class="stat-label">Calculated Risk Score</div>
-                        <div class="stat-val" id="valRisk">-</div>
-                    </div>
-                    <div class="stat-box">
-                        <div class="stat-label">Scan Latency</div>
-                        <div class="stat-val" id="valLatency">-</div>
-                    </div>
-                </div>
+{% block extra_head %}
+<style>
+    .badge {
+        padding: 0.4rem 1rem;
+        border-radius: 9999px;
+        font-weight: bold;
+        font-size: 0.8rem;
+        text-transform: uppercase;
+    }
+    .bg-red { background-color: var(--rose-gradient); color: white; }
+    .bg-green { background-color: #10b981; color: white; }
+    .stats-grid {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 1.5rem;
+        margin-top: 1.5rem;
+    }
+    .stat-box {
+        background-color: var(--bg-dark);
+        padding: 1.2rem;
+        border-radius: 12px;
+        border: 1px solid var(--border-color);
+    }
+    .stat-label {
+        font-size: 0.75rem;
+        color: var(--text-secondary);
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+    }
+    .stat-val {
+        font-size: 1.25rem;
+        font-weight: bold;
+        margin-top: 0.5rem;
+    }
+    
+    /* Config Panel styles */
+    .checkbox-panel {
+        display: grid;
+        grid-template-columns: repeat(2, 1fr);
+        gap: 1rem;
+        margin: 1.5rem 0;
+        background: rgba(255, 255, 255, 0.01);
+        border: 1px solid var(--border-color);
+        padding: 1.2rem;
+        border-radius: 12px;
+    }
+    .check-label {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        font-size: 0.9rem;
+        cursor: pointer;
+        user-select: none;
+    }
+    .check-label input {
+        cursor: pointer;
+        width: 16px;
+        height: 16px;
+        accent-color: #6366f1;
+    }
+    
+    /* Highlight styles */
+    .token-highlight {
+        background: rgba(244, 63, 94, 0.2);
+        border-bottom: 2px dashed #f43f5e;
+        padding: 2px 4px;
+        border-radius: 4px;
+        color: #fff;
+        font-weight: 500;
+    }
+    .defense-card {
+        margin-top: 1.5rem;
+        background: rgba(255, 255, 255, 0.02);
+        border: 1px solid var(--border-color);
+        padding: 1.2rem;
+        border-radius: 12px;
+    }
+    .defense-title {
+        font-size: 0.8rem;
+        text-transform: uppercase;
+        color: var(--text-secondary);
+        letter-spacing: 0.05em;
+        margin-bottom: 0.5rem;
+    }
+</style>
+{% endblock %}
 
-                <!-- Token Explainability Section -->
-                <div style="margin-top: 2rem; border-top: 1px solid var(--border-color); padding-top: 1.5rem;">
-                    <h4 style="margin-top: 0; margin-bottom: 10px; color: var(--text-secondary); font-size: 0.85rem; text-transform: uppercase;">
-                        Flagged Attack Tokens (Explainability Highlights)
-                    </h4>
-                    <p id="explainability-box" style="line-height: 1.8; margin: 0; font-size: 1rem; color: var(--text-secondary);"></p>
-                </div>
-            </div>
-        </div>
+{% block content %}
+<div class="card">
+    <h1>PromptGuard Security Sandbox</h1>
+    <p style="color: var(--text-secondary); margin-bottom: 1.5rem;">Test prompts in real-time to analyze how rules and classifiers handle threat vectors.</p>
+
+    <textarea id="txtPrompt" placeholder="Write standard text or inject malicious jailbreak patterns to test..."></textarea>
+    
+    <!-- Security Feature Checkboxes -->
+    <div class="checkbox-panel">
+        <label class="check-label">
+            <input type="checkbox" id="chkScrub">
+            <span>Enable Auto-Scrubbing (Active Defense)</span>
+        </label>
+        <label class="check-label">
+            <input type="checkbox" id="chkRedact">
+            <span>Enable PII Redaction Guard</span>
+        </label>
+        <label class="check-label">
+            <input type="checkbox" id="chkFirewall">
+            <span>Enable LLM Output Firewall</span>
+        </label>
+        <label class="check-label">
+            <input type="checkbox" id="chkShadow">
+            <span>Enable A/B Shadow Mode</span>
+        </label>
     </div>
 
-    <script>
-        async function executeSecurityCheck() {
-            const promptText = document.getElementById('txtPrompt').value.trim();
-            if (!promptText) return alert("Prompt string cannot be empty.");
+    <button class="btn-primary" onclick="executeSecurityCheck()">Execute Guard Scan</button>
 
-            const scanBtn = document.querySelector('.btn-primary');
-            scanBtn.innerText = 'Evaluating...';
-            scanBtn.disabled = true;
+    <!-- Main Output Verdict -->
+    <div id="pnlOutput" class="alert" style="display: none; background: rgba(0, 0, 0, 0.2); border: 1px solid var(--border-color);">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
+            <h3 style="margin: 0; font-size: 1.4rem;">Analysis Verdict</h3>
+            <span id="lblDecision" class="badge"></span>
+        </div>
+        
+        <div class="stats-grid">
+            <div class="stat-box">
+                <div class="stat-label">Identified Threat Class</div>
+                <div class="stat-val" id="valCategory">-</div>
+            </div>
+            <div class="stat-box">
+                <div class="stat-label">Calculated Risk Score</div>
+                <div class="stat-val" id="valRisk">-</div>
+            </div>
+            <div class="stat-box">
+                <div class="stat-label">Scan Latency</div>
+                <div class="stat-val" id="valLatency">-</div>
+            </div>
+        </div>
 
-        try {
-            const res = await fetch("/api/v1/scan", {
-                method: 'POST',
-                headers: { 
-                    'Content-Type': 'application/json',
-                    'X-API-Key': 'pg_live_key_98213'
-                },
-                body: JSON.stringify({ prompt: promptText })
-            });
+        <!-- Token Explainability Section -->
+        <div style="margin-top: 2rem; border-top: 1px solid var(--border-color); padding-top: 1.5rem;">
+            <h4 style="margin-top: 0; margin-bottom: 10px; color: var(--text-secondary); font-size: 0.85rem; text-transform: uppercase;">
+                Flagged Attack Tokens (Explainability Highlights)
+            </h4>
+            <p id="explainability-box" style="line-height: 1.8; margin: 0; font-size: 1rem; color: var(--text-secondary);"></p>
+        </div>
 
-               
-                
-                const payload = await res.json();
-                
-                const outputContainer = document.getElementById('pnlOutput');
-                outputContainer.style.display = 'block';
-                const decisionBadge = document.getElementById('lblDecision');
-                
-                if (payload.decision === "BLOCK" || !payload.is_safe) {
-                    decisionBadge.innerText = 'BLOCKED / THREAT';
-                    decisionBadge.className = 'badge bg-red';
-                    outputContainer.style.borderColor = 'rgba(244, 63, 94, 0.4)';
-                } else {
-                    decisionBadge.innerText = 'PASSED / SAFE';
-                    decisionBadge.className = 'badge bg-green';
-                    outputContainer.style.borderColor = 'rgba(16, 185, 129, 0.4)';
-                }
+        <!-- Active Defense: Scrubbing Output -->
+        <div class="defense-card" id="cardScrub" style="display: none;">
+            <div class="defense-title">Sanitized Prompt (Scrubbed Payloads)</div>
+            <div style="font-family: monospace; font-size: 0.95rem; color: #f8fafc;" id="valScrubText"></div>
+        </div>
 
-                document.getElementById('valCategory').innerText = payload.category;
-                document.getElementById('valRisk').innerText = (payload.risk_score * 100).toFixed(2) + '%';
-                document.getElementById('valLatency').innerText = payload.latency_ms + ' ms';
+        <!-- Active Defense: PII Redaction Output -->
+        <div class="defense-card" id="cardPii" style="display: none;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
+                <div class="defense-title" style="margin:0;">Redacted Prompt</div>
+                <span class="badge" style="background: rgba(99,102,241,0.2); color: #818cf8; font-size: 0.7rem; border: 1px solid rgba(99,102,241,0.3);" id="valPiiCount">0 items redacted</span>
+            </div>
+            <div style="font-family: monospace; font-size: 0.95rem; color: #f8fafc;" id="valPiiText"></div>
+        </div>
 
-                // Token Highlighting Logic (reconstructed from Model Coefficients)
-                const tokenContainer = document.getElementById('explainability-box');
-                const words = promptText.split(/\s+/);
-                const explanations = payload.explanations || [];
-                
-                const highlighted = words.map(word => {
-                    const cleanWord = word.toLowerCase().replace(/[^a-z0-9]/g, "");
-                    const match = explanations.find(e => e.token === cleanWord);
-                    
-                    // If coefficient > 0, the word was a threat indicator
-                    if (match && match.coefficient > 0.0) {
-                        return `<span style="background: rgba(244, 63, 94, 0.2); border-bottom: 2px dashed #f43f5e; padding: 2px 4px; border-radius: 4px; color: #fff; font-weight: 500;">${word}</span>`;
-                    }
-                    return word;
-                }).join(" ");
-                
-                tokenContainer.innerHTML = highlighted || "No security features flagged.";
+        <!-- A/B Shadow Mode Output -->
+        <div class="defense-card" id="cardShadow" style="display: none;">
+            <div class="defense-title">A/B Shadow Mode Side-by-Side Analysis</div>
+            <div style="font-size: 0.9rem; line-height: 1.6;">
+                <div id="valShadowRules" style="color: #a855f7;">Rules: -</div>
+                <div id="valShadowMl" style="color: #6366f1; margin-top: 0.2rem;">ML Model: -</div>
+                <div id="valShadowLatency" style="color: var(--text-secondary); font-size: 0.8rem; margin-top: 0.4rem;">-</div>
+            </div>
+        </div>
 
-            } catch (error) {
-                alert("API communication error: " + error);
-            } finally {
-                scanBtn.innerText = 'Execute Guard Scan';
-                scanBtn.disabled = false;
-            }
-        }
-    </script>
-</body>
-</html>
+        <!-- LLM Response & Output Firewall -->
+        <div class="defense-card" id="cardFirewall" style="display: none;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
+                <div class="defense-title" style="margin: 0;">LLM Response Output</div>
+                <span id="lblFirewallStatus" class="badge"></span>
+            </div>
+            <div style="font-size: 1rem; color: #e2e8f0; line-height: 1.6;" id="valFirewallText"></div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="/static/js/sandbox.js"></script>
+<script>
+    // Mark sandbox navigation tab as active
+    document.getElementById('nav-sandbox').classList.add('active');
+</script>
+{% endblock %}

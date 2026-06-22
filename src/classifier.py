@@ -2,7 +2,7 @@ import sys
 import os
 
 # Add this line near your other imports (around line 9)
-from src.core.calibration import calibrate_score
+from src.core.calibration import calibrate_score, load_calibration_config
 
 # Adjust path to find modules from the root PromptGuard-AI folder
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
@@ -10,11 +10,15 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from src.core.explainability import explain_prompt
 from src.rules import JAILBREAK_RULES
 
-def scan_prompt_hybrid(prompt: str, decision_threshold: float = 0.45) -> dict:
+def scan_prompt_hybrid(prompt: str, decision_threshold: float = None) -> dict:
     """
     Unified entrypoint that evaluates heuristics and the multiclass ML model
     to return safety status, threat categories, and explainability triggers.
     """
+    if decision_threshold is None:
+        config = load_calibration_config()
+        decision_threshold = config.get("decision_threshold", 0.45)
+
     if not prompt or not isinstance(prompt, str):
         return {
             "is_safe": True,

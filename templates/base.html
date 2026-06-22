@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}PromptGuard AI{% endblock %}</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+    {% block extra_head %}{% endblock %}
+</head>
+<body>
+    <div class="container">
+        <!-- Navigation Tabs -->
+        <div class="tabs">
+            <a href="/sandbox" id="nav-sandbox" class="tab-btn">Sandbox Console</a>
+            <a href="/dashboard" id="nav-dashboard" class="tab-btn">Analytics Dashboard</a>
+        </div>
+        
+        <!-- Page Body Content -->
+        {% block content %}{% endblock %}
+    </div>
+
+    <!-- Page Scripts -->
+    {% block scripts %}{% endblock %}
+</body>
+</html>

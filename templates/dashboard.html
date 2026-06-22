@@ -1,312 +1,315 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>PromptGuard AI - Analytics</title>
-    <link rel="stylesheet" href="/static/css/style.css">
-    <script src="https://cdn.jsdelivr.net/npm/apexcharts"></script>
-    <style>
-        .metrics-grid {
-            display: grid;
-            grid-template-columns: repeat(4, 1fr);
-            gap: 1.5rem;
-            margin-bottom: 2.5rem;
-        }
-        .stat-card {
-            background-color: var(--card-bg);
-            border: 1px solid var(--border-color);
-            border-radius: 16px;
-            padding: 1.5rem;
-            backdrop-filter: blur(16px);
-        }
-        .stat-title {
-            color: var(--text-secondary);
-            font-size: 0.75rem;
-            text-transform: uppercase;
-            letter-spacing: 0.05em;
-            margin-bottom: 0.5rem;
-        }
-        .stat-value {
-            font-size: 2.2rem;
-            font-weight: bold;
-            font-family: 'Outfit', sans-serif;
-        }
-        .charts-grid {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 2rem;
-            margin-bottom: 2.5rem;
-        }
-        table {
-            width: 100%;
-            border-collapse: collapse;
-            margin-top: 1.5rem;
-        }
-        th, td {
-            text-align: left;
-            padding: 1rem;
-            border-bottom: 1px solid var(--border-color);
-        }
-        th {
-            color: var(--text-secondary);
-            font-weight: bold;
-            font-size: 0.85rem;
-            text-transform: uppercase;
-            letter-spacing: 0.05em;
-        }
-        td {
-            color: var(--text-primary);
-        }
-        .badge {
-            padding: 0.35rem 0.75rem;
-            border-radius: 8px;
-            font-size: 0.75rem;
-            font-weight: bold;
-            text-transform: uppercase;
-            display: inline-block;
-        }
-        .bg-red { background: rgba(244, 63, 94, 0.2); border: 1px solid #f43f5e; color: #f43f5e; }
-        .bg-green { background: rgba(16, 185, 129, 0.2); border: 1px solid #10b981; color: #10b981; }
-    </style>
-</head>
-<body>
-    <div class="container">
-        <div class="tabs">
-            <a href="/sandbox" class="tab-btn">Sandbox Console</a>
-            <a href="/dashboard" class="tab-btn active">Analytics Dashboard</a>
+{% extends "base.html" %}
+
+{% block title %}PromptGuard AI - Security Analytics{% endblock %}
+
+{% block extra_head %}
+<script src="https://cdn.jsdelivr.net/npm/apexcharts"></script>
+<style>
+    .metrics-grid {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 1.5rem;
+        margin-bottom: 2.5rem;
+    }
+    .stat-card {
+        background-color: var(--card-bg);
+        border: 1px solid var(--border-color);
+        border-radius: 16px;
+        padding: 1.5rem;
+        backdrop-filter: blur(16px);
+    }
+    .stat-title {
+        color: var(--text-secondary);
+        font-size: 0.75rem;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        margin-bottom: 0.5rem;
+    }
+    .stat-value {
+        font-size: 2.2rem;
+        font-weight: bold;
+        font-family: 'Outfit', sans-serif;
+    }
+    .charts-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 2rem;
+        margin-bottom: 2.5rem;
+    }
+    table {
+        width: 100%;
+        border-collapse: collapse;
+        margin-top: 1.5rem;
+    }
+    th, td {
+        text-align: left;
+        padding: 1rem;
+        border-bottom: 1px solid var(--border-color);
+    }
+    th {
+        color: var(--text-secondary);
+        font-weight: bold;
+        font-size: 0.85rem;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+    }
+    td {
+        color: var(--text-primary);
+    }
+    .badge {
+        padding: 0.35rem 0.75rem;
+        border-radius: 8px;
+        font-size: 0.75rem;
+        font-weight: bold;
+        text-transform: uppercase;
+        display: inline-block;
+    }
+    .bg-red { background: rgba(244, 63, 94, 0.2); border: 1px solid #f43f5e; color: #f43f5e; }
+    .bg-green { background: rgba(16, 185, 129, 0.2); border: 1px solid #10b981; color: #10b981; }
+
+    /* Tuning sliders layout styling */
+    .slider-grid {
+        display: grid;
+        grid-template-columns: repeat(2, 1fr);
+        gap: 2rem;
+        margin-top: 1rem;
+    }
+    .slider-box {
+        display: flex;
+        flex-direction: column;
+        gap: 0.5rem;
+    }
+    .slider-header {
+        display: flex;
+        justify-content: space-between;
+        font-size: 0.9rem;
+    }
+    .slider-box input[type="range"] {
+        width: 100%;
+        accent-color: #6366f1;
+        background: rgba(255,255,255,0.05);
+        height: 6px;
+        border-radius: 3px;
+        outline: none;
+    }
+    
+    /* Confusion matrix heatmap styles */
+    .matrix-table {
+        margin-top: 1.5rem;
+        width: 100%;
+        border-collapse: separate;
+        border-spacing: 4px;
+    }
+    .matrix-table th, .matrix-table td {
+        padding: 1.2rem;
+        border: 1px solid var(--border-color);
+        border-radius: 6px;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<h1>PromptGuard Security Analytics</h1>
+<p style="color: var(--text-secondary); margin-top: -0.5rem; margin-bottom: 3rem;">Real-time threat statistics, database size, and latency parameters.</p>
+
+<!-- Stats Cards Grid -->
+<div class="metrics-grid">
+    <div class="stat-card">
+        <div class="stat-title">Total Scans</div>
+        <div class="stat-value" id="valTotal">0</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-title">Blocked Attacks</div>
+        <div class="stat-value" id="valBlocked" style="color: #f43f5e;">0</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-title">Mean Risk Score</div>
+        <div class="stat-value" id="valAvgRisk">0%</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-title">Average Latency</div>
+        <div class="stat-value" id="valAvgLatency">0 ms</div>
+    </div>
+</div>
+
+<!-- ApexCharts Visualization Section -->
+<div class="charts-grid">
+    <div class="card">
+        <h3 style="margin-top:0;">Threat Class Distribution</h3>
+        <div id="threatChart"></div>
+    </div>
+    <div class="card">
+        <h3 style="margin-top:0;">Scan Latency Profile (Last 10 Scans)</h3>
+        <div id="latencyChart"></div>
+    </div>
+</div>
+
+<!-- Live Calibration Tuning Console -->
+<div class="card" style="margin-bottom: 2.5rem;">
+    <h2 style="margin-top: 0;">Risk Calibration Console (Tuning Panel)</h2>
+    <p style="color: var(--text-secondary); margin-top: -0.5rem; margin-bottom: 1.5rem; font-size: 0.9rem;">
+        Dynamically adjust detection rules, limits, and decision thresholds. Saved parameters update backend calculations instantly.
+    </p>
+    
+    <div class="slider-grid">
+        <!-- Decision Threshold -->
+        <div class="slider-box">
+            <div class="slider-header">
+                <span>Decision Threshold (Sensitivity)</span>
+                <strong id="valDecisionThreshold">0.45</strong>
+            </div>
+            <input type="range" id="threshold-slider" min="0.10" max="0.90" step="0.05" value="0.45" 
+                   oninput="updateSliderLabel('threshold-slider', 'valDecisionThreshold')">
         </div>
         
-        <h1>PromptGuard Security Analytics</h1>
-        <p style="color: var(--text-secondary); margin-top: -0.5rem; margin-bottom: 3rem;">Real-time threat statistics, database size, and latency parameters.</p>
-
-        <!-- Stats Cards Grid -->
-        <div class="metrics-grid">
-            <div class="stat-card">
-                <div class="stat-title">Total Scans</div>
-                <div class="stat-value" id="valTotal">0</div>
+        <!-- Dampening: Length -->
+        <div class="slider-box">
+            <div class="slider-header">
+                <span>Dampening: Length Max (Chars)</span>
+                <strong id="valDampenLen">100</strong>
             </div>
-            <div class="stat-card">
-                <div class="stat-title">Blocked Attacks</div>
-                <div class="stat-value" id="valBlocked" style="color: #f43f5e;">0</div>
-            </div>
-            <div class="stat-card">
-                <div class="stat-title">Mean Risk Score</div>
-                <div class="stat-value" id="valAvgRisk">0%</div>
-            </div>
-            <div class="stat-card">
-                <div class="stat-title">Average Latency</div>
-                <div class="stat-value" id="valAvgLatency">0 ms</div>
-            </div>
+            <input type="range" id="dampen-len-slider" min="40" max="200" step="10" value="100" 
+                   oninput="updateSliderLabel('dampen-len-slider', 'valDampenLen')">
         </div>
 
-        <!-- ApexCharts Visualization Section -->
-        <div class="charts-grid">
-            <div class="card">
-                <h3 style="margin-top:0;">Threat Class Distribution</h3>
-                <div id="threatChart"></div>
+        <!-- Dampening: Caps -->
+        <div class="slider-box">
+            <div class="slider-header">
+                <span>Dampening: Caps Ratio Threshold</span>
+                <strong id="valDampenCaps">15%</strong>
             </div>
-            <div class="card">
-                <h3 style="margin-top:0;">Scan Latency Profile (Last 10 Scans)</h3>
-                <div id="latencyChart"></div>
-            </div>
+            <input type="range" id="dampen-caps-slider" min="0.05" max="0.30" step="0.05" value="0.15" 
+                   oninput="updateSliderLabel('dampen-caps-slider', 'valDampenCaps', true)">
         </div>
 
-        <!-- Category Table Card -->
-        <div class="card" style="margin-bottom: 2.5rem;">
-            <h2 style="margin-top: 0;">Threat Distribution by Category</h2>
-            <table>
-                <thead>
-                    <tr>
-                        <th>Category</th>
-                        <th>Occurrences</th>
-                    </tr>
-                </thead>
-                <tbody id="tblDistributionBody">
-                    <tr>
-                        <td colspan="2" style="text-align: center; color: var(--text-secondary);">Waiting for data...</td>
-                    </tr>
-                </tbody>
-            </table>
+        <!-- Dampening: Special Chars -->
+        <div class="slider-box">
+            <div class="slider-header">
+                <span>Dampening: Special Delimiters Limit</span>
+                <strong id="valDampenSpec">5%</strong>
+            </div>
+            <input type="range" id="dampen-spec-slider" min="0.02" max="0.15" step="0.01" value="0.05" 
+                   oninput="updateSliderLabel('dampen-spec-slider', 'valDampenSpec', true)">
         </div>
 
-        <!-- Recent Logs Table Card -->
-        <div class="card">
-            <h2 style="margin-top: 0;">Recent Scan Logs</h2>
-            <table>
-                <thead>
-                    <tr>
-                        <th>Timestamp</th>
-                        <th>Prompt Snippet</th>
-                        <th>Risk Score</th>
-                        <th>Category</th>
-                        <th>Status</th>
-                    </tr>
-                </thead>
-                <tbody id="tblLogsBody">
-                    <tr><td colspan="5" style="text-align: center; color: var(--text-secondary);">Loading logs...</td></tr>
-                </tbody>
-            </table>
+        <!-- Boosting: Caps -->
+        <div class="slider-box">
+            <div class="slider-header">
+                <span>Boosting: Caps Ratio Trigger</span>
+                <strong id="valBoostCaps">35%</strong>
+            </div>
+            <input type="range" id="boost-caps-slider" min="0.20" max="0.60" step="0.05" value="0.35" 
+                   oninput="updateSliderLabel('boost-caps-slider', 'valBoostCaps', true)">
+        </div>
+
+        <!-- Boosting: Special Chars -->
+        <div class="slider-box">
+            <div class="slider-header">
+                <span>Boosting: Special Delimiters Trigger</span>
+                <strong id="valBoostSpec">20%</strong>
+            </div>
+            <input type="range" id="boost-spec-slider" min="0.10" max="0.40" step="0.05" value="0.20" 
+                   oninput="updateSliderLabel('boost-spec-slider', 'valBoostSpec', true)">
         </div>
     </div>
+    
+    <div style="margin-top: 2rem; display: flex; align-items: center; gap: 15px;">
+        <button class="btn-primary" id="btnSaveConfig" onclick="saveCalibrationConfig()">Save Active Config</button>
+        <span id="configStatusMsg" style="display: none; color: #10b981; font-weight: 500;">✓ Active config saved successfully!</span>
+    </div>
+</div>
 
-    <script>
-        let threatChart = null;
-        let latencyChart = null;
+<!-- Interactive Model Performance Evaluation -->
+<div class="card" style="margin-bottom: 2.5rem;">
+    <h2 style="margin-top: 0;">Interactive Model Evaluation Engine</h2>
+    <p style="color: var(--text-secondary); margin-top: -0.5rem; margin-bottom: 1.5rem; font-size: 0.9rem;">
+        Trigger dynamic pipeline evaluations against validation test suites and review the confusion matrix.
+    </p>
+    
+    <button class="btn-primary" id="btnRunEvaluation" onclick="runPerformanceEvaluation()">Run Pipeline Evaluation</button>
+    
+    <!-- Spinner loading -->
+    <div id="evalLoading" style="display: none; margin-top: 1.5rem; color: var(--text-secondary);">
+        Evaluating model checkpoints and running validation suites... Please wait.
+    </div>
 
-        async function fetchSystemStats() {
-            try {
-                // 1. Fetch telemetry metrics
-                const resMetrics = await fetch('/api/v1/metrics');
-                const data = await resMetrics.json();
-                
-                document.getElementById('valTotal').innerText = data.total_scans;
-                document.getElementById('valBlocked').innerText = data.blocked_scans;
-                document.getElementById('valAvgRisk').innerText = (data.average_risk * 100).toFixed(2) + '%';
-                document.getElementById('valAvgLatency').innerText = data.average_latency + ' ms';
-                
-                // 2. Populate Category Table
-                const tableBody = document.getElementById('tblDistributionBody');
-                tableBody.innerHTML = '';
-                const categories = Object.keys(data.threat_distribution);
-                if (categories.length === 0) {
-                    tableBody.innerHTML = `<tr><td colspan="2" style="text-align: center; color: var(--text-secondary);">No scan telemetry logged.</td></tr>`;
-                } else {
-                    categories.forEach(cat => {
-                        const row = document.createElement('tr');
-                        row.innerHTML = `
-                            <td><strong>${cat}</strong></td>
-                            <td>${data.threat_distribution[cat]}</td>
-                        `;
-                        tableBody.appendChild(row);
-                    });
-                }
+    <!-- Evaluation Results Panel -->
+    <div id="evalResultsPanel" style="display: none; margin-top: 2rem; border-top: 1px solid var(--border-color); padding-top: 1.5rem;">
+        <div class="metrics-grid" style="grid-template-columns: repeat(2, 1fr); margin-bottom: 1.5rem;">
+            <div class="stat-card" style="background: rgba(255,255,255,0.01);">
+                <div class="stat-title">Overall Validation Accuracy</div>
+                <div class="stat-value" id="valEvalAccuracy" style="color: #10b981;">0.00%</div>
+            </div>
+        </div>
 
-                // 3. Fetch Recent Audit Logs
-                const resLogs = await fetch('/api/v1/logs');
-                const logs = await resLogs.json();
+        <div class="charts-grid" style="align-items: start;">
+            <!-- Metrics Table -->
+            <div>
+                <h3>Classification Report Metrics</h3>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Class Category</th>
+                            <th>Precision</th>
+                            <th>Recall</th>
+                            <th>F1-Score</th>
+                        </tr>
+                    </thead>
+                    <tbody id="tblEvalMetricsBody"></tbody>
+                </table>
+            </div>
 
-                const logsBody = document.getElementById('tblLogsBody');
-                logsBody.innerHTML = '';
+            <!-- Heatmap Confusion Matrix -->
+            <div>
+                <h3>Dynamic Confusion Matrix Heatmap</h3>
+                <table class="matrix-table" id="tblConfusionMatrixBody"></table>
+            </div>
+        </div>
+    </div>
+</div>
 
-                if (logs.length === 0) {
-                    logsBody.innerHTML = `<tr><td colspan="5" style="text-align: center; color: var(--text-secondary);">No logs found.</td></tr>`;
-                } else {
-                    logs.forEach(log => {
-                        const row = document.createElement('tr');
-                        
-                        // Parse ISO string to clean time format
-                        const dateObj = new Date(log.timestamp);
-                        const cleanTime = dateObj.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-                        
-                        // Truncate long prompts to prevent table layout wrap issues
-                        const cleanPrompt = log.prompt_text.length > 50 
-                            ? log.prompt_text.slice(0, 47) + "..." 
-                            : log.prompt_text;
+<!-- Threat Distribution Table -->
+<div class="card" style="margin-bottom: 2.5rem;">
+    <h2 style="margin-top: 0;">Threat Distribution by Category</h2>
+    <table>
+        <thead>
+            <tr>
+                <th>Category</th>
+                <th>Occurrences</th>
+            </tr>
+        </thead>
+        <tbody id="tblDistributionBody">
+            <tr>
+                <td colspan="2" style="text-align: center; color: var(--text-secondary);">Waiting for data...</td>
+            </tr>
+        </tbody>
+    </table>
+</div>
 
-                        const badgeClass = log.is_blocked === 1 ? 'badge bg-red' : 'badge bg-green';
-                        const statusLabel = log.is_blocked === 1 ? 'Blocked' : 'Passed';
+<!-- Recent Logs Table Card -->
+<div class="card">
+    <h2 style="margin-top: 0;">Recent Scan Logs</h2>
+    <table>
+        <thead>
+            <tr>
+                <th>Timestamp</th>
+                <th>Prompt Snippet</th>
+                <th>Risk Score</th>
+                <th>Category</th>
+                <th>Status</th>
+            </tr>
+        </thead>
+        <tbody id="tblLogsBody">
+            <tr><td colspan="5" style="text-align: center; color: var(--text-secondary);">Loading logs...</td></tr>
+        </tbody>
+    </table>
+</div>
+{% endblock %}
 
-                        row.innerHTML = `
-                            <td>${cleanTime}</td>
-                            <td title="${log.prompt_text}">"${cleanPrompt}"</td>
-                            <td>${(log.risk_score * 100).toFixed(1)}%</td>
-                            <td>${log.category}</td>
-                            <td><span class="${badgeClass}">${statusLabel}</span></td>
-                        `;
-                        logsBody.appendChild(row);
-                    });
-                }
-
-                // 4. Render and Update Charts
-                renderCharts(data.threat_distribution, logs);
-
-            } catch (err) {
-                console.error("Dashboard error: ", err);
-            }
-        }
-
-        function renderCharts(threatDistribution, logs) {
-            // A. Threat Distribution Donut Chart
-            const categories = Object.keys(threatDistribution);
-            const counts = Object.values(threatDistribution);
-
-            const threatOptions = {
-                series: counts.length > 0 ? counts : [1],
-                chart: {
-                    type: 'donut',
-                    height: 250,
-                    foreColor: '#94a3b8'
-                },
-                labels: counts.length > 0 ? categories : ["No Data"],
-                colors: ['#10b981', '#6366f1', '#a855f7', '#f43f5e', '#f59e0b'],
-                theme: { mode: 'dark' },
-                legend: { position: 'bottom' },
-                dataLabels: { enabled: false },
-                plotOptions: {
-                    pie: {
-                        donut: {
-                            size: '70%',
-                            labels: { show: false }
-                        }
-                    }
-                }
-            };
-
-            if (threatChart) {
-                threatChart.updateOptions(threatOptions);
-            } else {
-                threatChart = new ApexCharts(document.querySelector("#threatChart"), threatOptions);
-                threatChart.render();
-            }
-
-            // B. Latency Profile Area Chart (Reverse to chronological order)
-            const latencyData = logs.map(l => l.latency_ms).reverse();
-            const timeLabels = logs.map(l => {
-                const dateObj = new Date(l.timestamp);
-                return dateObj.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-            }).reverse();
-
-            const latencyOptions = {
-                series: [{
-                    name: 'Latency (ms)',
-                    data: latencyData.length > 0 ? latencyData : [0]
-                }],
-                chart: {
-                    type: 'area',
-                    height: 250,
-                    toolbar: { show: false },
-                    foreColor: '#94a3b8'
-                },
-                stroke: { curve: 'smooth', width: 2 },
-                colors: ['#a855f7'],
-                xaxis: {
-                    categories: timeLabels.length > 0 ? timeLabels : ["No Logs"],
-                    labels: { show: false }
-                },
-                grid: { borderColor: 'rgba(255, 255, 255, 0.05)' },
-                fill: {
-                    type: 'gradient',
-                    gradient: {
-                        shadeIntensity: 1,
-                        opacityFrom: 0.3,
-                        opacityTo: 0.05,
-                        stops: [0, 90, 100]
-                    }
-                },
-                theme: { mode: 'dark' }
-            };
-
-            if (latencyChart) {
-                latencyChart.updateOptions(latencyOptions);
-            } else {
-                latencyChart = new ApexCharts(document.querySelector("#latencyChart"), latencyOptions);
-                latencyChart.render();
-            }
-        }
-        
-        fetchSystemStats();
-        setInterval(fetchSystemStats, 10000); // Refresh stats and charts every 10s
-    </script>
-</body>
-</html>
+{% block scripts %}
+<script src="/static/js/dashboard.js"></script>
+<script>
+    // Mark dashboard navigation tab as active
+    document.getElementById('nav-dashboard').classList.add('active');
+</script>
+{% endblock %}

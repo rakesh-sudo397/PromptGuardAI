@@ -1,7 +1,7 @@
 """
 Filename: src/evaluate.py
 Action: MODIFY
-Purpose: Evaluates the multi-class model and saves a 4x4 Confusion Matrix.
+Purpose: Evaluates the multi-class model, saves a 4x4 Confusion Matrix, and returns dictionary metrics.
 """
 
 import sys
@@ -90,6 +90,66 @@ def evaluate_model():
     
     print(f"Confusion Matrix saved to: {cm_path}")
     print("=========================================")
+
+def run_evaluation_metrics() -> dict:
+    """
+    Computes classification evaluation metrics and confusion matrix values.
+    Returns a dictionary suitable for API responses.
+    """
+    # 1. Load dataset and split
+    dataset = load_dataset("deepset/prompt-injections", split="train")
+    df = pd.DataFrame(dataset)
+    df['multiclass_label'] = df.apply(lambda r: assign_threat_category(r['text'], r['label']), axis=1)
+    
+    _, test_df = train_test_split(
+        df, 
+        test_size=0.20, 
+        random_state=42, 
+        stratify=df['multiclass_label']
+    )
+    
+    # 2. Clean test text
+    cleaned_test = test_df['text'].apply(clean_text)
+    y_test = test_df['multiclass_label']
+    
+    # 3. Load Vectorizer and Classifier
+    models_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'models'))
+    vectorizer_path = os.path.join(models_dir, 'vectorizer.pkl')
+    model_path = os.path.join(models_dir, 'classifier.pkl')
+    
+    with open(vectorizer_path, 'rb') as f:
+        vectorizer = pickle.load(f)
+    with open(model_path, 'rb') as f:
+        model = pickle.load(f)
+        
+    # 4. Vectorize test text and predict
+    X_test_tfidf = vectorizer.transform(cleaned_test)
+    y_pred = model.predict(X_test_tfidf)
+    
+    # 5. Compute metrics
+    acc = float(accuracy_score(y_test, y_pred))
+    report = classification_report(
+        y_test, 
+        y_pred, 
+        target_names=["Clean", "Override", "Roleplay", "Leakage"],
+        output_dict=True
+    )
+    cm = confusion_matrix(y_test, y_pred)
+    
+    class_metrics = {}
+    for cls_name in ["Clean", "Override", "Roleplay", "Leakage"]:
+        if cls_name in report:
+            class_metrics[cls_name] = {
+                "precision": float(report[cls_name]["precision"]),
+                "recall": float(report[cls_name]["recall"]),
+                "f1": float(report[cls_name]["f1-score"])
+            }
+            
+    return {
+        "accuracy": acc,
+        "class_metrics": class_metrics,
+        "confusion_matrix": cm.tolist()
+    }
 
 if __name__ == "__main__":
     evaluate_model()
