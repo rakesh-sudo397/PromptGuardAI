@@ -1,0 +1,15 @@
+{
+  "decision_threshold": 0.45,
+  "dampening": {
+    "length_threshold": 100,
+    "caps_threshold": 0.15,
+    "special_threshold": 0.05,
+    "max_raw_prob": 0.75,
+    "factor": 0.5
+  },
+  "boosting": {
+    "caps_threshold": 0.35,
+    "special_threshold": 0.20,
+    "factor": 1.3
+  }
+}

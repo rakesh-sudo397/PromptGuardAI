@@ -26,7 +26,7 @@ DEFAULT_CONFIG = {
         "length_threshold": 100,
         "caps_threshold": 0.15,
         "special_threshold": 0.05,
-        "max_raw_prob": 0.55,
+        "max_raw_prob": 0.75,
         "factor": 0.5
     },
     "boosting": {
