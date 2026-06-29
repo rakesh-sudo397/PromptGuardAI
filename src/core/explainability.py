@@ -77,14 +77,17 @@ def explain_prompt(prompt: str) -> dict:
         if impact > 0:
             explanations.append((word, round(impact, 4)))
             
-    # Sort by impact score descending and take top 3
-    explanations = sorted(explanations, key=lambda x: x[1], reverse=True)[:3]
+    # Format explanations as a list of dictionaries for the frontend JS
+    formatted_explanations = [
+        {"token": word, "coefficient": float(impact)}
+        for word, impact in sorted(explanations, key=lambda x: x[1], reverse=True)[:3]
+    ]
     
     return {
         "category": category_name,
         "probability": round(float(pred_prob), 4),
         "threat_probability": round(threat_prob, 4),
-        "explanations": explanations
+        "explanations": formatted_explanations
     }
 if __name__ == "__main__":
     # Test cases to verify implementation

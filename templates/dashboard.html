@@ -1,179 +1,315 @@
-<!--
-Filename: templates/dashboard.html
-Action: CREATE
-Purpose: Analytics overview console of PromptGuard telemetry logs.
--->
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>PromptGuard AI - Analytics</title>
-    <style>
-        :root {
-            --bg: #0b0f19;
-            --card-bg: #151d30;
-            --txt: #f1f5f9;
-            --accent: #2563eb;
-            --border: #1e293b;
-        }
-        body {
-            font-family: system-ui, -apple-system, sans-serif;
-            background-color: var(--bg);
-            color: var(--txt);
-            margin: 0;
-            padding: 2.5rem;
-            display: flex;
-            justify-content: center;
-        }
-        .wrapper {
-            width: 100%;
-            max-width: 1000px;
-        }
-        .navigation {
-            display: flex;
-            gap: 1rem;
-            margin-bottom: 2rem;
-        }
-        .navigation a {
-            color: #64748b;
-            text-decoration: none;
-            padding: 0.5rem 1.2rem;
-            border-radius: 0.5rem;
-            background-color: var(--card-bg);
-            transition: all 0.2s;
-        }
-        .navigation a.active, .navigation a:hover {
-            color: var(--txt);
-            background-color: var(--accent);
-        }
-        .metrics-grid {
-            display: grid;
-            grid-template-columns: repeat(4, 1fr);
-            gap: 1.5rem;
-            margin-bottom: 2rem;
-        }
-        .stat-card {
-            background-color: var(--card-bg);
-            border: 1px solid var(--border);
-            border-radius: 0.75rem;
-            padding: 1.5rem;
-        }
-        .stat-title {
-            color: #64748b;
-            font-size: 0.75rem;
-            text-transform: uppercase;
-            letter-spacing: 0.05em;
-            margin-bottom: 0.5rem;
-        }
-        .stat-value {
-            font-size: 2.2rem;
-            font-weight: bold;
-        }
-        .table-card {
-            background-color: var(--card-bg);
-            border: 1px solid var(--border);
-            border-radius: 0.75rem;
-            padding: 1.5rem;
-        }
-        table {
-            width: 100%;
-            border-collapse: collapse;
-            margin-top: 1rem;
-        }
-        th, td {
-            text-align: left;
-            padding: 0.75rem;
-            border-bottom: 1px solid var(--border);
-        }
-        th {
-            color: #64748b;
-            font-weight: bold;
-            font-size: 0.85rem;
-        }
-    </style>
-</head>
-<body>
-    <div class="wrapper">
-        <div class="navigation">
-            <a href="/sandbox">Sandbox Console</a>
-            <a href="/dashboard" class="active">Analytics Dashboard</a>
-        </div>
-        <h1>PromptGuard Security Analytics</h1>
-        <p style="color: #64748b; margin-top: -0.5rem; margin-bottom: 2rem;">Real-time threat statistics, database size, and latency parameters.</p>
+{% extends "base.html" %}
 
-        <div class="metrics-grid">
-            <div class="stat-card">
-                <div class="stat-title">Total Scans</div>
-                <div class="stat-value" id="valTotal">0</div>
+{% block title %}PromptGuard AI - Security Analytics{% endblock %}
+
+{% block extra_head %}
+<script src="https://cdn.jsdelivr.net/npm/apexcharts"></script>
+<style>
+    .metrics-grid {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 1.5rem;
+        margin-bottom: 2.5rem;
+    }
+    .stat-card {
+        background-color: var(--card-bg);
+        border: 1px solid var(--border-color);
+        border-radius: 16px;
+        padding: 1.5rem;
+        backdrop-filter: blur(16px);
+    }
+    .stat-title {
+        color: var(--text-secondary);
+        font-size: 0.75rem;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        margin-bottom: 0.5rem;
+    }
+    .stat-value {
+        font-size: 2.2rem;
+        font-weight: bold;
+        font-family: 'Outfit', sans-serif;
+    }
+    .charts-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 2rem;
+        margin-bottom: 2.5rem;
+    }
+    table {
+        width: 100%;
+        border-collapse: collapse;
+        margin-top: 1.5rem;
+    }
+    th, td {
+        text-align: left;
+        padding: 1rem;
+        border-bottom: 1px solid var(--border-color);
+    }
+    th {
+        color: var(--text-secondary);
+        font-weight: bold;
+        font-size: 0.85rem;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+    }
+    td {
+        color: var(--text-primary);
+    }
+    .badge {
+        padding: 0.35rem 0.75rem;
+        border-radius: 8px;
+        font-size: 0.75rem;
+        font-weight: bold;
+        text-transform: uppercase;
+        display: inline-block;
+    }
+    .bg-red { background: rgba(244, 63, 94, 0.2); border: 1px solid #f43f5e; color: #f43f5e; }
+    .bg-green { background: rgba(16, 185, 129, 0.2); border: 1px solid #10b981; color: #10b981; }
+
+    /* Tuning sliders layout styling */
+    .slider-grid {
+        display: grid;
+        grid-template-columns: repeat(2, 1fr);
+        gap: 2rem;
+        margin-top: 1rem;
+    }
+    .slider-box {
+        display: flex;
+        flex-direction: column;
+        gap: 0.5rem;
+    }
+    .slider-header {
+        display: flex;
+        justify-content: space-between;
+        font-size: 0.9rem;
+    }
+    .slider-box input[type="range"] {
+        width: 100%;
+        accent-color: #6366f1;
+        background: rgba(255,255,255,0.05);
+        height: 6px;
+        border-radius: 3px;
+        outline: none;
+    }
+    
+    /* Confusion matrix heatmap styles */
+    .matrix-table {
+        margin-top: 1.5rem;
+        width: 100%;
+        border-collapse: separate;
+        border-spacing: 4px;
+    }
+    .matrix-table th, .matrix-table td {
+        padding: 1.2rem;
+        border: 1px solid var(--border-color);
+        border-radius: 6px;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<h1>PromptGuard Security Analytics</h1>
+<p style="color: var(--text-secondary); margin-top: -0.5rem; margin-bottom: 3rem;">Real-time threat statistics, database size, and latency parameters.</p>
+
+<!-- Stats Cards Grid -->
+<div class="metrics-grid">
+    <div class="stat-card">
+        <div class="stat-title">Total Scans</div>
+        <div class="stat-value" id="valTotal">0</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-title">Blocked Attacks</div>
+        <div class="stat-value" id="valBlocked" style="color: #f43f5e;">0</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-title">Mean Risk Score</div>
+        <div class="stat-value" id="valAvgRisk">0%</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-title">Average Latency</div>
+        <div class="stat-value" id="valAvgLatency">0 ms</div>
+    </div>
+</div>
+
+<!-- ApexCharts Visualization Section -->
+<div class="charts-grid">
+    <div class="card">
+        <h3 style="margin-top:0;">Threat Class Distribution</h3>
+        <div id="threatChart"></div>
+    </div>
+    <div class="card">
+        <h3 style="margin-top:0;">Scan Latency Profile (Last 10 Scans)</h3>
+        <div id="latencyChart"></div>
+    </div>
+</div>
+
+<!-- Live Calibration Tuning Console -->
+<div class="card" style="margin-bottom: 2.5rem;">
+    <h2 style="margin-top: 0;">Risk Calibration Console (Tuning Panel)</h2>
+    <p style="color: var(--text-secondary); margin-top: -0.5rem; margin-bottom: 1.5rem; font-size: 0.9rem;">
+        Dynamically adjust detection rules, limits, and decision thresholds. Saved parameters update backend calculations instantly.
+    </p>
+    
+    <div class="slider-grid">
+        <!-- Decision Threshold -->
+        <div class="slider-box">
+            <div class="slider-header">
+                <span>Decision Threshold (Sensitivity)</span>
+                <strong id="valDecisionThreshold">0.45</strong>
             </div>
-            <div class="stat-card">
-                <div class="stat-title">Blocked Attacks</div>
-                <div class="stat-value" id="valBlocked" style="color: #f43f5e;">0</div>
+            <input type="range" id="threshold-slider" min="0.10" max="0.90" step="0.05" value="0.45" 
+                   oninput="updateSliderLabel('threshold-slider', 'valDecisionThreshold')">
+        </div>
+        
+        <!-- Dampening: Length -->
+        <div class="slider-box">
+            <div class="slider-header">
+                <span>Dampening: Length Max (Chars)</span>
+                <strong id="valDampenLen">100</strong>
             </div>
-            <div class="stat-card">
-                <div class="stat-title">Mean Risk Score</div>
-                <div class="stat-value" id="valAvgRisk">0%</div>
-            </div>
-            <div class="stat-card">
-                <div class="stat-title">Average Latency</div>
-                <div class="stat-value" id="valAvgLatency">0 ms</div>
-            </div>
+            <input type="range" id="dampen-len-slider" min="40" max="200" step="10" value="100" 
+                   oninput="updateSliderLabel('dampen-len-slider', 'valDampenLen')">
         </div>
 
-        <div class="table-card">
-            <h2>Threat Distribution by Category</h2>
-            <table>
-                <thead>
-                    <tr>
-                        <th>Category</th>
-                        <th>Occurrences</th>
-                    </tr>
-                </thead>
-                <tbody id="tblDistributionBody">
-                    <tr>
-                        <td colspan="2" style="text-align: center; color: #64748b;">Waiting for data...</td>
-                    </tr>
-                </tbody>
-            </table>
+        <!-- Dampening: Caps -->
+        <div class="slider-box">
+            <div class="slider-header">
+                <span>Dampening: Caps Ratio Threshold</span>
+                <strong id="valDampenCaps">15%</strong>
+            </div>
+            <input type="range" id="dampen-caps-slider" min="0.05" max="0.30" step="0.05" value="0.15" 
+                   oninput="updateSliderLabel('dampen-caps-slider', 'valDampenCaps', true)">
+        </div>
+
+        <!-- Dampening: Special Chars -->
+        <div class="slider-box">
+            <div class="slider-header">
+                <span>Dampening: Special Delimiters Limit</span>
+                <strong id="valDampenSpec">5%</strong>
+            </div>
+            <input type="range" id="dampen-spec-slider" min="0.02" max="0.15" step="0.01" value="0.05" 
+                   oninput="updateSliderLabel('dampen-spec-slider', 'valDampenSpec', true)">
+        </div>
+
+        <!-- Boosting: Caps -->
+        <div class="slider-box">
+            <div class="slider-header">
+                <span>Boosting: Caps Ratio Trigger</span>
+                <strong id="valBoostCaps">35%</strong>
+            </div>
+            <input type="range" id="boost-caps-slider" min="0.20" max="0.60" step="0.05" value="0.35" 
+                   oninput="updateSliderLabel('boost-caps-slider', 'valBoostCaps', true)">
+        </div>
+
+        <!-- Boosting: Special Chars -->
+        <div class="slider-box">
+            <div class="slider-header">
+                <span>Boosting: Special Delimiters Trigger</span>
+                <strong id="valBoostSpec">20%</strong>
+            </div>
+            <input type="range" id="boost-spec-slider" min="0.10" max="0.40" step="0.05" value="0.20" 
+                   oninput="updateSliderLabel('boost-spec-slider', 'valBoostSpec', true)">
         </div>
     </div>
+    
+    <div style="margin-top: 2rem; display: flex; align-items: center; gap: 15px;">
+        <button class="btn-primary" id="btnSaveConfig" onclick="saveCalibrationConfig()">Save Active Config</button>
+        <span id="configStatusMsg" style="display: none; color: #10b981; font-weight: 500;">✓ Active config saved successfully!</span>
+    </div>
+</div>
 
-    <script>
-        async function fetchSystemStats() {
-            try {
-                const res = await fetch('/api/v1/metrics');
-                const data = await res.json();
-                
-                document.getElementById('valTotal').innerText = data.total_scans;
-                document.getElementById('valBlocked').innerText = data.blocked_scans;
-                document.getElementById('valAvgRisk').innerText = (data.average_risk * 100).toFixed(2) + '%';
-                document.getElementById('valAvgLatency').innerText = data.average_latency + ' ms';
-                
-                const tableBody = document.getElementById('tblDistributionBody');
-                tableBody.innerHTML = '';
-                
-                const categories = Object.keys(data.threat_distribution);
-                if (categories.length === 0) {
-                    tableBody.innerHTML = `<tr><td colspan="2" style="text-align: center; color: #64748b;">No scan telemetry logged.</td></tr>`;
-                    return;
-                }
+<!-- Interactive Model Performance Evaluation -->
+<div class="card" style="margin-bottom: 2.5rem;">
+    <h2 style="margin-top: 0;">Interactive Model Evaluation Engine</h2>
+    <p style="color: var(--text-secondary); margin-top: -0.5rem; margin-bottom: 1.5rem; font-size: 0.9rem;">
+        Trigger dynamic pipeline evaluations against validation test suites and review the confusion matrix.
+    </p>
+    
+    <button class="btn-primary" id="btnRunEvaluation" onclick="runPerformanceEvaluation()">Run Pipeline Evaluation</button>
+    
+    <!-- Spinner loading -->
+    <div id="evalLoading" style="display: none; margin-top: 1.5rem; color: var(--text-secondary);">
+        Evaluating model checkpoints and running validation suites... Please wait.
+    </div>
 
-                categories.forEach(cat => {
-                    const row = document.createElement('tr');
-                    row.innerHTML = `
-                        <td><strong>${cat}</strong></td>
-                        <td>${data.threat_distribution[cat]}</td>
-                    `;
-                    tableBody.appendChild(row);
-                });
-            } catch (err) {
-                console.error("Dashboard error: ", err);
-            }
-        }
-        
-        fetchSystemStats();
-        setInterval(fetchSystemStats, 10000); // 10s auto-refresh
-    </script>
-</body>
-</html>
+    <!-- Evaluation Results Panel -->
+    <div id="evalResultsPanel" style="display: none; margin-top: 2rem; border-top: 1px solid var(--border-color); padding-top: 1.5rem;">
+        <div class="metrics-grid" style="grid-template-columns: repeat(2, 1fr); margin-bottom: 1.5rem;">
+            <div class="stat-card" style="background: rgba(255,255,255,0.01);">
+                <div class="stat-title">Overall Validation Accuracy</div>
+                <div class="stat-value" id="valEvalAccuracy" style="color: #10b981;">0.00%</div>
+            </div>
+        </div>
+
+        <div class="charts-grid" style="align-items: start;">
+            <!-- Metrics Table -->
+            <div>
+                <h3>Classification Report Metrics</h3>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Class Category</th>
+                            <th>Precision</th>
+                            <th>Recall</th>
+                            <th>F1-Score</th>
+                        </tr>
+                    </thead>
+                    <tbody id="tblEvalMetricsBody"></tbody>
+                </table>
+            </div>
+
+            <!-- Heatmap Confusion Matrix -->
+            <div>
+                <h3>Dynamic Confusion Matrix Heatmap</h3>
+                <table class="matrix-table" id="tblConfusionMatrixBody"></table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Threat Distribution Table -->
+<div class="card" style="margin-bottom: 2.5rem;">
+    <h2 style="margin-top: 0;">Threat Distribution by Category</h2>
+    <table>
+        <thead>
+            <tr>
+                <th>Category</th>
+                <th>Occurrences</th>
+            </tr>
+        </thead>
+        <tbody id="tblDistributionBody">
+            <tr>
+                <td colspan="2" style="text-align: center; color: var(--text-secondary);">Waiting for data...</td>
+            </tr>
+        </tbody>
+    </table>
+</div>
+
+<!-- Recent Logs Table Card -->
+<div class="card">
+    <h2 style="margin-top: 0;">Recent Scan Logs</h2>
+    <table>
+        <thead>
+            <tr>
+                <th>Timestamp</th>
+                <th>Prompt Snippet</th>
+                <th>Risk Score</th>
+                <th>Category</th>
+                <th>Status</th>
+            </tr>
+        </thead>
+        <tbody id="tblLogsBody">
+            <tr><td colspan="5" style="text-align: center; color: var(--text-secondary);">Loading logs...</td></tr>
+        </tbody>
+    </table>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="/static/js/dashboard.js"></script>
+<script>
+    // Mark dashboard navigation tab as active
+    document.getElementById('nav-dashboard').classList.add('active');
+</script>
+{% endblock %}

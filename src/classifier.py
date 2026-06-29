@@ -1,17 +1,24 @@
 import sys
 import os
 
+# Add this line near your other imports (around line 9)
+from src.core.calibration import calibrate_score, load_calibration_config
+
 # Adjust path to find modules from the root PromptGuard-AI folder
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 from src.core.explainability import explain_prompt
 from src.rules import JAILBREAK_RULES
 
-def scan_prompt_hybrid(prompt: str, decision_threshold: float = 0.45) -> dict:
+def scan_prompt_hybrid(prompt: str, decision_threshold: float = None) -> dict:
     """
     Unified entrypoint that evaluates heuristics and the multiclass ML model
     to return safety status, threat categories, and explainability triggers.
     """
+    if decision_threshold is None:
+        config = load_calibration_config()
+        decision_threshold = config.get("decision_threshold", 0.45)
+
     if not prompt or not isinstance(prompt, str):
         return {
             "is_safe": True,
@@ -31,17 +38,20 @@ def scan_prompt_hybrid(prompt: str, decision_threshold: float = 0.45) -> dict:
     rules_triggered = len(matched_rules) > 0
     rule_risk = 1.0 if rules_triggered else 0.0
 
-        # 2. Run Multiclass ML Model & Explainability (Deep Path)
+     # 2. Run Multiclass ML Model & Explainability (Deep Path)
     ml_report = explain_prompt(prompt)
     ml_prob = ml_report['threat_probability'] # Use threat probability for security
     ml_category = ml_report['category']
     explanations = ml_report['explanations']
 
-    # 3. Aggregate risk scores
-    final_risk_score = max(rule_risk, ml_prob)
+    # 3. Calibrate ML model probability using prompt metadata
+    calibrated_ml_prob = calibrate_score(ml_prob, prompt)
+
+    # 4. Aggregate risk scores
+    final_risk_score = max(rule_risk, calibrated_ml_prob)
     is_safe = final_risk_score < decision_threshold
     decision = "PASS" if is_safe else "BLOCK"
-    
+
     # Define classification category
     if not is_safe:
         if rules_triggered:
