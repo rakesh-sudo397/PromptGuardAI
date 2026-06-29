@@ -94,7 +94,7 @@ function renderCharts(threatDistribution, logs) {
             fontFamily: 'Inter, sans-serif'
         },
         labels: counts.length > 0 ? categories : ["No Data"],
-        colors: ['#34d399', '#6366f1', '#a855f7', '#f43f5e', '#fbbf24'],
+        colors: ['#10b981', '#6366f1', '#a855f7', '#f43f5e', '#fbbf24', '#0ea5e9'],
         theme: { mode: 'dark' },
         stroke: { show: false },
         legend: { 
