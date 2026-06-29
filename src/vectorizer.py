@@ -16,9 +16,20 @@ def build_vectorizer():
     print("=========================================")
     
     # 1. Load the dataset
-    print("Loading deepset/prompt-injections dataset...")
-    dataset = load_dataset("deepset/prompt-injections", split="train")
-    df = pd.DataFrame(dataset)
+    print("Loading combined datasets (deepset, xTRam1, neuralchemy) from Hugging Face...")
+    try:
+        ds1 = load_dataset("deepset/prompt-injections", split="train")
+        df1 = pd.DataFrame(ds1)[['text', 'label']]
+        ds2 = load_dataset("xTRam1/safe-guard-prompt-injection", split="train")
+        df2 = pd.DataFrame(ds2)[['text', 'label']]
+        ds3 = load_dataset("neuralchemy/Prompt-injection-dataset", split="train")
+        df3 = pd.DataFrame(ds3)[['text', 'label']]
+        df = pd.concat([df1, df2, df3], ignore_index=True)
+        df['label'] = df['label'].astype(int)
+    except Exception as e:
+        print(f"Error combining datasets: {e}. Falling back to default deepset/prompt-injections.")
+        dataset = load_dataset("deepset/prompt-injections", split="train")
+        df = pd.DataFrame(dataset)
     
     # 2. Clean the prompts using our preprocessing module
     print("Cleaning prompts...")
