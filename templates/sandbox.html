@@ -15,7 +15,7 @@
     .bg-green { background-color: #10b981; color: white; }
     .stats-grid {
         display: grid;
-        grid-template-columns: repeat(3, 1fr);
+        grid-template-columns: repeat(4, 1fr);
         gap: 1.5rem;
         margin-top: 1.5rem;
     }
@@ -129,6 +129,10 @@
             <div class="stat-box">
                 <div class="stat-label">Identified Threat Class</div>
                 <div class="stat-val" id="valCategory">-</div>
+            </div>
+            <div class="stat-box">
+                <div class="stat-label">Evasion Style Detected</div>
+                <div class="stat-val" id="valEvasion" style="color: #a855f7;">None</div>
             </div>
             <div class="stat-box">
                 <div class="stat-label">Calculated Risk Score</div>

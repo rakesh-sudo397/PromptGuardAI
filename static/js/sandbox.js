@@ -65,6 +65,16 @@ async function executeSecurityCheck() {
 
         // 2. Set stats details
         document.getElementById('valCategory').innerText = payload.category;
+        
+        const evasionBox = document.getElementById('valEvasion');
+        if (payload.evasions_detected && payload.evasions_detected.length > 0) {
+            evasionBox.innerText = payload.evasions_detected.join(", ");
+            evasionBox.style.color = "#f43f5e";
+        } else {
+            evasionBox.innerText = "None";
+            evasionBox.style.color = "#94a3b8";
+        }
+        
         document.getElementById('valRisk').innerText = (payload.risk_score * 100).toFixed(2) + '%';
         document.getElementById('valLatency').innerText = payload.latency_ms + ' ms';
 
