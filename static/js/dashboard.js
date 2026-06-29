@@ -88,21 +88,46 @@ function renderCharts(threatDistribution, logs) {
         series: counts.length > 0 ? counts : [1],
         chart: {
             type: 'donut',
-            height: 250,
-            foreColor: '#94a3b8'
+            height: 280,
+            background: 'transparent',
+            foreColor: '#94a3b8',
+            fontFamily: 'Inter, sans-serif'
         },
         labels: counts.length > 0 ? categories : ["No Data"],
-        colors: ['#10b981', '#6366f1', '#a855f7', '#f43f5e', '#f59e0b'],
+        colors: ['#34d399', '#6366f1', '#a855f7', '#f43f5e', '#fbbf24'],
         theme: { mode: 'dark' },
-        legend: { position: 'bottom' },
+        stroke: { show: false },
+        legend: { 
+            position: 'bottom',
+            fontFamily: 'Inter',
+            fontWeight: 500,
+            labels: { colors: '#94a3b8' },
+            itemMargin: { horizontal: 10, vertical: 5 }
+        },
         dataLabels: { enabled: false },
         plotOptions: {
             pie: {
                 donut: {
-                    size: '70%',
-                    labels: { show: false }
+                    size: '75%',
+                    labels: {
+                        show: true,
+                        name: { show: true, fontSize: '0.85rem', color: '#94a3b8' },
+                        value: { show: true, fontSize: '1.5rem', color: '#ffffff', fontWeight: 'bold' },
+                        total: {
+                            show: true,
+                            label: 'Total Scans',
+                            color: '#94a3b8',
+                            formatter: function (w) {
+                                return w.globals.seriesTotals.reduce((a, b) => a + b, 0)
+                            }
+                        }
+                    }
                 }
             }
+        },
+        tooltip: {
+            theme: 'dark',
+            style: { fontSize: '0.9rem', fontFamily: 'Inter' }
         }
     };
 
@@ -121,30 +146,58 @@ function renderCharts(threatDistribution, logs) {
 
     const latencyOptions = {
         series: [{
-            name: 'Latency (ms)',
+            name: 'Latency',
             data: latencyData.length > 0 ? latencyData : [0]
         }],
         chart: {
             type: 'area',
-            height: 250,
+            height: 280,
+            background: 'transparent',
             toolbar: { show: false },
-            foreColor: '#94a3b8'
+            foreColor: '#94a3b8',
+            fontFamily: 'Inter, sans-serif',
+            dropShadow: {
+                enabled: true,
+                top: 8,
+                left: 0,
+                blur: 8,
+                color: '#a855f7',
+                opacity: 0.2
+            }
         },
-        stroke: { curve: 'smooth', width: 2 },
+        stroke: { curve: 'smooth', width: 3 },
         colors: ['#a855f7'],
+        dataLabels: { enabled: false },
         xaxis: {
             categories: timeLabels.length > 0 ? timeLabels : ["No Logs"],
-            labels: { show: false }
+            labels: { show: false },
+            axisBorder: { show: false },
+            axisTicks: { show: false }
         },
-        grid: { borderColor: 'rgba(255, 255, 255, 0.05)' },
+        yaxis: {
+            labels: {
+                formatter: function (val) { return val.toFixed(1) + " ms"; },
+                style: { colors: '#64748b' }
+            }
+        },
+        grid: {
+            borderColor: 'rgba(255, 255, 255, 0.02)',
+            xaxis: { lines: { show: false } },
+            yaxis: { lines: { show: true } }
+        },
         fill: {
             type: 'gradient',
             gradient: {
                 shadeIntensity: 1,
                 opacityFrom: 0.3,
-                opacityTo: 0.05,
+                opacityTo: 0.01,
                 stops: [0, 90, 100]
             }
+        },
+        tooltip: {
+            theme: 'dark',
+            x: { show: true },
+            style: { fontSize: '0.9rem', fontFamily: 'Inter' }
         },
         theme: { mode: 'dark' }
     };
@@ -365,21 +418,46 @@ function renderShadowCharts(data) {
         series: series.some(s => s > 0) ? series : [1, 0, 0, 0],
         chart: {
             type: 'donut',
-            height: 250,
-            foreColor: '#94a3b8'
+            height: 280,
+            background: 'transparent',
+            foreColor: '#94a3b8',
+            fontFamily: 'Inter, sans-serif'
         },
         labels: series.some(s => s > 0) ? categories : ["No Scans"],
         colors: ['#10b981', '#f59e0b', '#a855f7', '#f43f5e'],
         theme: { mode: 'dark' },
-        legend: { position: 'bottom' },
+        stroke: { show: false },
+        legend: { 
+            position: 'bottom',
+            fontFamily: 'Inter',
+            fontWeight: 500,
+            labels: { colors: '#94a3b8' },
+            itemMargin: { horizontal: 10, vertical: 5 }
+        },
         dataLabels: { enabled: false },
         plotOptions: {
             pie: {
                 donut: {
-                    size: '70%',
-                    labels: { show: false }
+                    size: '75%',
+                    labels: {
+                        show: true,
+                        name: { show: true, fontSize: '0.85rem', color: '#94a3b8' },
+                        value: { show: true, fontSize: '1.5rem', color: '#ffffff', fontWeight: 'bold' },
+                        total: {
+                            show: true,
+                            label: 'Total Scans',
+                            color: '#94a3b8',
+                            formatter: function (w) {
+                                return w.globals.seriesTotals.reduce((a, b) => a + b, 0)
+                            }
+                        }
+                    }
                 }
             }
+        },
+        tooltip: {
+            theme: 'dark',
+            style: { fontSize: '0.9rem', fontFamily: 'Inter' }
         }
     };
     
@@ -399,35 +477,63 @@ function renderShadowCharts(data) {
     const latencyOptions = {
         series: [
             {
-                name: 'Rules Heuristics Latency (ms)',
+                name: 'Rules Heuristics',
                 data: rulesLatencies.length > 0 ? rulesLatencies : [0]
             },
             {
-                name: 'ML Model Latency (ms)',
+                name: 'ML Classifier',
                 data: mlLatencies.length > 0 ? mlLatencies : [0]
             }
         ],
         chart: {
             type: 'area',
-            height: 250,
+            height: 280,
+            background: 'transparent',
             toolbar: { show: false },
-            foreColor: '#94a3b8'
+            foreColor: '#94a3b8',
+            fontFamily: 'Inter, sans-serif',
+            dropShadow: {
+                enabled: true,
+                top: 8,
+                left: 0,
+                blur: 8,
+                color: '#6366f1',
+                opacity: 0.15
+            }
         },
-        stroke: { curve: 'smooth', width: 2 },
+        stroke: { curve: 'smooth', width: 3 },
         colors: ['#10b981', '#6366f1'],
+        dataLabels: { enabled: false },
         xaxis: {
             categories: indices.length > 0 ? indices : ["No Logs"],
-            labels: { show: true }
+            labels: { show: true, style: { colors: '#64748b' } },
+            axisBorder: { show: false },
+            axisTicks: { show: false }
         },
-        grid: { borderColor: 'rgba(255, 255, 255, 0.05)' },
+        yaxis: {
+            labels: {
+                formatter: function (val) { return val.toFixed(1) + " ms"; },
+                style: { colors: '#64748b' }
+            }
+        },
+        grid: {
+            borderColor: 'rgba(255, 255, 255, 0.02)',
+            xaxis: { lines: { show: false } },
+            yaxis: { lines: { show: true } }
+        },
         fill: {
             type: 'gradient',
             gradient: {
                 shadeIntensity: 1,
-                opacityFrom: 0.2,
-                opacityTo: 0.05,
+                opacityFrom: 0.25,
+                opacityTo: 0.01,
                 stops: [0, 90, 100]
             }
+        },
+        tooltip: {
+            theme: 'dark',
+            x: { show: true },
+            style: { fontSize: '0.9rem', fontFamily: 'Inter' }
         },
         theme: { mode: 'dark' }
     };
