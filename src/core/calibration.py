@@ -14,7 +14,11 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '.
 from src.preprocessing import extract_metadata_features, clean_text
 
 # Core threat terms to check (pre-normalized)
-THREAT_KEYWORDS = {"ignore", "instructions", "rules", "system", "override", "bypass", "forget", "roleplay", "dan", "developer", "leak", "reveal", "output"}
+THREAT_KEYWORDS = {
+    "ignore", "instructions", "rules", "system", "override", "bypass", "forget", 
+    "roleplay", "dan", "developer", "leak", "reveal", "output",
+    "systemadministrator", "ignoriere", "regeln", "anweisungen", "einschränkungen"
+}
 
 DEFAULT_CONFIG = {
     "decision_threshold": 0.45,
