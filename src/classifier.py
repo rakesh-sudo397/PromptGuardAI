@@ -1,14 +1,13 @@
 import sys
 import os
 
-# Add this line near your other imports (around line 9)
-from src.core.calibration import calibrate_score, load_calibration_config
-
 # Adjust path to find modules from the root PromptGuard-AI folder
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
+from src.core.calibration import calibrate_score, load_calibration_config
 from src.core.explainability import explain_prompt
 from src.rules import JAILBREAK_RULES
+from src.preprocessing import clean_text
 
 def scan_prompt_hybrid(prompt: str, decision_threshold: float = None) -> dict:
     """
@@ -29,10 +28,11 @@ def scan_prompt_hybrid(prompt: str, decision_threshold: float = None) -> dict:
             "explanations": []
         }
 
-    # 1. Run Rule-Based Scanner (Fast Path)
+    # 1. Run Rule-Based Scanner (Fast Path on Cleaned/De-obfuscated Prompt)
+    cleaned_prompt = clean_text(prompt)
     matched_rules = []
     for rule_name, pattern in JAILBREAK_RULES.items():
-        if pattern.search(prompt):
+        if pattern.search(cleaned_prompt):
             matched_rules.append(rule_name)
 
     rules_triggered = len(matched_rules) > 0
@@ -65,7 +65,7 @@ def scan_prompt_hybrid(prompt: str, decision_threshold: float = None) -> dict:
             else:
                 category = "Rule-Flagged Attack"
         else:
-            category = ml_category
+            category = ml_category if ml_category != "Clean" else "Model-Flagged Threat"
     else:
         category = "Clean"
 
