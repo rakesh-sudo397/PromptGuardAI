@@ -41,6 +41,43 @@ def decode_base64_payloads(text: str) -> str:
         return text + " " + " ".join(decoded_payloads)
     return text
 
+def decode_hex_payloads(text: str) -> str:
+    """
+    Scans the text for potential Hexadecimal substrings (e.g., \x69\x67 or raw 69676e6f7265),
+    decodes them, and appends the decoded string to the prompt.
+    """
+    if not text:
+        return ""
+    
+    # Matches standard escape hex (e.g. \x69\x67) or long hex words (e.g. 69676e6f7265)
+    escape_hex_pattern = re.compile(r'(?:\\x[0-9a-fA-F]{2})+')
+    raw_hex_pattern = re.compile(r'\b[0-9a-fA-F]{8,}\b')
+    
+    decoded_payloads = []
+    
+    # 1. Process escape patterns (\x69\x67\x6e\x6f\x72\x65)
+    for match in escape_hex_pattern.findall(text):
+        try:
+            clean_hex = match.replace("\\x", "")
+            decoded_str = bytes.fromhex(clean_hex).decode('utf-8', errors='ignore').strip()
+            if decoded_str:
+                decoded_payloads.append(decoded_str)
+        except Exception:
+            continue
+            
+    # 2. Process raw hex patterns (69676e6f7265)
+    for match in raw_hex_pattern.findall(text):
+        try:
+            decoded_str = bytes.fromhex(match).decode('utf-8', errors='ignore').strip()
+            if decoded_str and decoded_str.isprintable():
+                decoded_payloads.append(decoded_str)
+        except Exception:
+            continue
+            
+    if decoded_payloads:
+        return text + " " + " ".join(decoded_payloads)
+    return text
+
 def normalize_leetspeak(text: str) -> str:
     """
     Translates common leet-speak character substitutions back to standard letters.
@@ -153,16 +190,19 @@ def clean_text(text: str) -> str:
     # 2. Detect and decode base64 payloads
     text_processed = decode_base64_payloads(text_processed)
     
-    # 3. Translate leet-speak words
+    # 3. Detect and decode hexadecimal payloads
+    text_processed = decode_hex_payloads(text_processed)
+    
+    # 4. Translate leet-speak words
     text_processed = normalize_leetspeak(text_processed)
     
-    # 4. Lowercase all text
+    # 5. Lowercase all text
     text_cleaned = text_processed.lower()
     
-    # 5. Replace newlines and tabs with spaces
+    # 6. Replace newlines and tabs with spaces
     text_cleaned = re.sub(r'\s+', ' ', text_cleaned)
     
-    # 6. Strip punctuation (preserving separators like '-' and '#')
+    # 7. Strip punctuation (preserving separators like '-' and '#')
     allowed_chars = string.ascii_lowercase + string.digits + " -#"
     text_cleaned = "".join([char for char in text_cleaned if char in allowed_chars])
     
