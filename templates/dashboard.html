@@ -144,6 +144,40 @@
     </div>
 </div>
 
+<!-- A/B Shadow Mode Analytics Section -->
+<div class="card" style="margin-bottom: 2.5rem;">
+    <h2 style="margin-top: 0;">A/B Shadow Mode Analytics</h2>
+    <p style="color: var(--text-secondary); margin-top: -0.5rem; margin-bottom: 1.5rem; font-size: 0.9rem;">
+        Performance audit comparing Rule-Based Heuristics vs ML-Based classification engines on agreement rate and scan latencies.
+    </p>
+    
+    <div class="metrics-grid" style="grid-template-columns: repeat(3, 1fr); margin-bottom: 2rem;">
+        <div class="stat-card" style="background: rgba(255, 255, 255, 0.01);">
+            <div class="stat-title">Heuristics vs ML Agreement Rate</div>
+            <div class="stat-value" id="valAgreementRate" style="color: #6366f1;">0.00%</div>
+        </div>
+        <div class="stat-card" style="background: rgba(255, 255, 255, 0.01);">
+            <div class="stat-title">Rules-Only Detections</div>
+            <div class="stat-value" id="valRulesOnly">0</div>
+        </div>
+        <div class="stat-card" style="background: rgba(255, 255, 255, 0.01);">
+            <div class="stat-title">ML-Only Detections</div>
+            <div class="stat-value" id="valMLOnly">0</div>
+        </div>
+    </div>
+
+    <div class="charts-grid" style="grid-template-columns: 1fr 1fr;">
+        <div>
+            <h3>Agreement Split</h3>
+            <div id="shadowSplitChart"></div>
+        </div>
+        <div>
+            <h3>Latency Comparison (Rules vs ML)</h3>
+            <div id="shadowLatencyChart"></div>
+        </div>
+    </div>
+</div>
+
 <!-- Live Calibration Tuning Console -->
 <div class="card" style="margin-bottom: 2.5rem;">
     <h2 style="margin-top: 0;">Risk Calibration Console (Tuning Panel)</h2>
@@ -293,6 +327,7 @@
         <thead>
             <tr>
                 <th>Timestamp</th>
+                <th>Client IP</th>
                 <th>Prompt Snippet</th>
                 <th>Risk Score</th>
                 <th>Category</th>
@@ -300,7 +335,7 @@
             </tr>
         </thead>
         <tbody id="tblLogsBody">
-            <tr><td colspan="5" style="text-align: center; color: var(--text-secondary);">Loading logs...</td></tr>
+            <tr><td colspan="6" style="text-align: center; color: var(--text-secondary);">Loading logs...</td></tr>
         </tbody>
     </table>
 </div>

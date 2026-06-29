@@ -1,5 +1,7 @@
 let threatChart = null;
 let latencyChart = null;
+let shadowSplitChart = null;
+let shadowLatencyChart = null;
 
 // Fetch metrics, update charts, load calibration settings, and logs
 async function fetchSystemStats() {
@@ -38,7 +40,7 @@ async function fetchSystemStats() {
         logsBody.innerHTML = '';
 
         if (logs.length === 0) {
-            logsBody.innerHTML = `<tr><td colspan="5" style="text-align: center; color: var(--text-secondary);">No logs found.</td></tr>`;
+            logsBody.innerHTML = `<tr><td colspan="6" style="text-align: center; color: var(--text-secondary);">No logs found.</td></tr>`;
         } else {
             logs.forEach(log => {
                 const row = document.createElement('tr');
@@ -46,15 +48,21 @@ async function fetchSystemStats() {
                 const dateObj = new Date(log.timestamp);
                 const cleanTime = dateObj.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
                 
-                const cleanPrompt = log.prompt_text.length > 40 
-                    ? log.prompt_text.slice(0, 37) + "..." 
+                const cleanPrompt = log.prompt_text.length > 30 
+                    ? log.prompt_text.slice(0, 27) + "..." 
                     : log.prompt_text;
 
                 const badgeClass = log.is_blocked === 1 ? 'badge bg-red' : 'badge bg-green';
                 const statusLabel = log.is_blocked === 1 ? 'Blocked' : 'Passed';
 
+                // Display a short snippet of the SHA-256 hashed IP for cleaner UI layout
+                const shortIp = log.client_ip && log.client_ip !== 'unknown'
+                    ? log.client_ip.slice(0, 8) + '...'
+                    : 'unknown';
+
                 row.innerHTML = `
                     <td>${cleanTime}</td>
+                    <td><code style="color: #818cf8; font-size: 0.85rem;" title="${log.client_ip}">${shortIp}</code></td>
                     <td title="${log.prompt_text}">"${cleanPrompt}"</td>
                     <td>${(log.risk_score * 100).toFixed(1)}%</td>
                     <td>${log.category}</td>
@@ -329,9 +337,116 @@ async function runPerformanceEvaluation() {
     }
 }
 
+// ----------------------------------------------------
+// A/B SHADOW MODE ANALYTICS MANAGEMENT
+// ----------------------------------------------------
+async function fetchShadowStats() {
+    try {
+        const res = await fetch('/api/v1/shadow_analytics');
+        const data = await res.json();
+        
+        document.getElementById('valAgreementRate').innerText = data.agreement_rate.toFixed(2) + '%';
+        document.getElementById('valRulesOnly').innerText = data.splits.rules_only;
+        document.getElementById('valMLOnly').innerText = data.splits.ml_only;
+        
+        renderShadowCharts(data);
+    } catch (err) {
+        console.error("Shadow analytics dashboard error: ", err);
+    }
+}
+
+function renderShadowCharts(data) {
+    // 1. Shadow Split Chart (Donut)
+    const splits = data.splits;
+    const categories = ["Clean (Agree)", "Rules Only (Block)", "ML Only (Block)", "Both (Agree Block)"];
+    const series = [splits.clean, splits.rules_only, splits.ml_only, splits.both];
+    
+    const splitOptions = {
+        series: series.some(s => s > 0) ? series : [1, 0, 0, 0],
+        chart: {
+            type: 'donut',
+            height: 250,
+            foreColor: '#94a3b8'
+        },
+        labels: series.some(s => s > 0) ? categories : ["No Scans"],
+        colors: ['#10b981', '#f59e0b', '#a855f7', '#f43f5e'],
+        theme: { mode: 'dark' },
+        legend: { position: 'bottom' },
+        dataLabels: { enabled: false },
+        plotOptions: {
+            pie: {
+                donut: {
+                    size: '70%',
+                    labels: { show: false }
+                }
+            }
+        }
+    };
+    
+    if (shadowSplitChart) {
+        shadowSplitChart.updateOptions(splitOptions);
+    } else {
+        shadowSplitChart = new ApexCharts(document.querySelector("#shadowSplitChart"), splitOptions);
+        shadowSplitChart.render();
+    }
+    
+    // 2. Shadow Latency Comparison Chart (Area)
+    const latencyTimeline = data.latency_comparison;
+    const rulesLatencies = latencyTimeline.map(item => item.rules_latency);
+    const mlLatencies = latencyTimeline.map(item => item.ml_latency);
+    const indices = latencyTimeline.map(item => "#" + item.index);
+    
+    const latencyOptions = {
+        series: [
+            {
+                name: 'Rules Heuristics Latency (ms)',
+                data: rulesLatencies.length > 0 ? rulesLatencies : [0]
+            },
+            {
+                name: 'ML Model Latency (ms)',
+                data: mlLatencies.length > 0 ? mlLatencies : [0]
+            }
+        ],
+        chart: {
+            type: 'area',
+            height: 250,
+            toolbar: { show: false },
+            foreColor: '#94a3b8'
+        },
+        stroke: { curve: 'smooth', width: 2 },
+        colors: ['#10b981', '#6366f1'],
+        xaxis: {
+            categories: indices.length > 0 ? indices : ["No Logs"],
+            labels: { show: true }
+        },
+        grid: { borderColor: 'rgba(255, 255, 255, 0.05)' },
+        fill: {
+            type: 'gradient',
+            gradient: {
+                shadeIntensity: 1,
+                opacityFrom: 0.2,
+                opacityTo: 0.05,
+                stops: [0, 90, 100]
+            }
+        },
+        theme: { mode: 'dark' }
+    };
+    
+    if (shadowLatencyChart) {
+        shadowLatencyChart.updateOptions(latencyOptions);
+    } else {
+        shadowLatencyChart = new ApexCharts(document.querySelector("#shadowLatencyChart"), latencyOptions);
+        shadowLatencyChart.render();
+    }
+}
+
 // Initial stats fetching and configuration load
 document.addEventListener('DOMContentLoaded', () => {
     fetchSystemStats();
+    fetchShadowStats();
     loadCalibrationConfig();
-    setInterval(fetchSystemStats, 10000); // refresh telemetry every 10s
+    setInterval(() => {
+        fetchSystemStats();
+        fetchShadowStats();
+    }, 10000); // refresh telemetry every 10s
 });

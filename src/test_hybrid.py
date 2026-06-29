@@ -33,7 +33,7 @@ def test_hybrid_pipeline():
     
     for idx, tc in enumerate(test_cases):
         prompt = tc['prompt']
-        actual_label = tc['label'] # 1 = Attack, 0 = Safe
+        actual_label = tc['label'] if 'label' in tc else (1 if tc.get('expected_decision') == "BLOCK" else 0)
         
         report = scan_prompt_hybrid(prompt, decision_threshold=threshold)
         blocked = report['decision'] == "BLOCK"

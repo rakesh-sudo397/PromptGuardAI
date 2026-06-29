@@ -14,6 +14,21 @@ def strip_zero_width_characters(text: str) -> str:
         text = text.replace(char, "")
     return text
 
+def normalize_homoglyphs(text: str) -> str:
+    """
+    Normalizes visually lookalike unicode characters (homoglyphs) to standard ASCII Latin counterparts.
+    """
+    if not text:
+        return ""
+    homoglyph_map = {
+        'а': 'a', 'е': 'e', 'о': 'o', 'р': 'p', 'с': 'c', 'у': 'y', 'х': 'x', 'і': 'i', 'ѕ': 's',
+        'А': 'A', 'Е': 'E', 'О': 'O', 'Р': 'P', 'С': 'C', 'У': 'Y', 'Х': 'X', 'І': 'I', 'Ѕ': 'S',
+        'ԁ': 'd', 'һ': 'h', 'ј': 'j', 'κ': 'k', 'м': 'm', 'ո': 'n', 'ԛ': 'q', 'ԝ': 'w', 'ｚ': 'z'
+    }
+    for char, replacement in homoglyph_map.items():
+        text = text.replace(char, replacement)
+    return text
+
 def decode_base64_payloads(text: str) -> str:
     """
     Scans text for potential Base64 substrings, decodes them if valid, 
@@ -175,7 +190,6 @@ def auto_scrub_payloads(text: str) -> str:
         scrubbed = re.sub(pattern, repl, scrubbed)
         
     return scrubbed
-
 def clean_text(text: str) -> str:
     """
     Cleans raw prompt text by lowercasing, decoding base64/hex blocks,
@@ -183,9 +197,12 @@ def clean_text(text: str) -> str:
     """
     if not text or not isinstance(text, str):
         return ""
+        
+    # 0. Normalize unicode homoglyphs
+    text_processed = normalize_homoglyphs(text)
     
     # 1. Strip zero-width spacing
-    text_processed = strip_zero_width_characters(text)
+    text_processed = strip_zero_width_characters(text_processed)
     
     # 2. Detect and decode base64 payloads
     text_processed = decode_base64_payloads(text_processed)
