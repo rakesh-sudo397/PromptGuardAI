@@ -7,7 +7,13 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from src.core.calibration import calibrate_score, load_calibration_config
 from src.core.explainability import explain_prompt
 from src.rules import JAILBREAK_RULES
-from src.preprocessing import clean_text
+from src.preprocessing import (
+    clean_text,
+    strip_zero_width_characters,
+    decode_base64_payloads,
+    decode_hex_payloads,
+    normalize_leetspeak
+)
 
 def scan_prompt_hybrid(prompt: str, decision_threshold: float = None) -> dict:
     """
@@ -25,7 +31,8 @@ def scan_prompt_hybrid(prompt: str, decision_threshold: float = None) -> dict:
             "decision": "PASS",
             "matched_rules": [],
             "category": "Clean",
-            "explanations": []
+            "explanations": [],
+            "evasions_detected": []
         }
 
     # 1. Run Rule-Based Scanner (Fast Path on Cleaned/De-obfuscated Prompt)
@@ -37,6 +44,17 @@ def scan_prompt_hybrid(prompt: str, decision_threshold: float = None) -> dict:
 
     rules_triggered = len(matched_rules) > 0
     rule_risk = 1.0 if rules_triggered else 0.0
+
+    # 1b. Detect Obfuscation/Evasion Methods
+    evasions_detected = []
+    if strip_zero_width_characters(prompt) != prompt:
+        evasions_detected.append("Zero-Width Space")
+    if len(decode_base64_payloads(prompt)) > len(prompt):
+        evasions_detected.append("Base64")
+    if len(decode_hex_payloads(prompt)) > len(prompt):
+        evasions_detected.append("Hexadecimal")
+    if normalize_leetspeak(prompt) != prompt:
+        evasions_detected.append("Leetspeak")
 
      # 2. Run Multiclass ML Model & Explainability (Deep Path)
     ml_report = explain_prompt(prompt)
@@ -75,5 +93,6 @@ def scan_prompt_hybrid(prompt: str, decision_threshold: float = None) -> dict:
         "decision": decision,
         "matched_rules": matched_rules,
         "category": category,
-        "explanations": explanations
+        "explanations": explanations,
+        "evasions_detected": evasions_detected
     }
