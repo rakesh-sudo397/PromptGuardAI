@@ -42,10 +42,10 @@ class TestPromptGuardAuth(unittest.TestCase):
         self.assertEqual(response.status_code, 211 if response.status_code == 211 else 201)
         self.assertIn("message", response.json())
         
-        # 2. Try duplicate signup
+        # 2. Try duplicate signup (should fail with 403 Forbidden)
         response_dup = self.client.post("/api/v1/auth/signup", json=payload)
-        self.assertEqual(response_dup.status_code, 400)
-        self.assertIn("already registered", response_dup.json()["detail"])
+        self.assertEqual(response_dup.status_code, 403)
+        self.assertIn("Registration is closed", response_dup.json()["detail"])
 
     def test_02_user_login(self):
         # Register user

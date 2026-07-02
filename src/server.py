@@ -329,7 +329,17 @@ async def auth_signup(payload: AuthRequest):
     try:
         with get_db_connection() as conn:
             cursor = conn.cursor()
-            # Check if user already exists
+            
+            # Restrict to a single developer account (only 1 row allowed in users table)
+            cursor.execute("SELECT COUNT(*) as count FROM users")
+            row = cursor.fetchone()
+            if row and row["count"] >= 1:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Registration is closed. A developer account is already registered."
+                )
+                
+            # Check if user already exists (safety backup)
             cursor.execute("SELECT id FROM users WHERE username = ?", (username,))
             if cursor.fetchone():
                 raise HTTPException(
