@@ -40,7 +40,15 @@ def load_calibration_config() -> dict:
     """
     Loads active risk thresholds from the data folder.
     """
-    # Look in ../../data/calibration_config.json relative to this file
+    # Check if a serverless temp file exists
+    tmp_path = "/tmp/calibration_config.json"
+    if os.path.exists(tmp_path):
+        try:
+            with open(tmp_path, 'r', encoding='utf-8') as f:
+                return json.load(f)
+        except Exception:
+            pass
+
     config_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', 'data', 'calibration_config.json'))
     if not os.path.exists(config_path):
         return DEFAULT_CONFIG

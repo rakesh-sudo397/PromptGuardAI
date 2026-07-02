@@ -31,10 +31,29 @@ from pydantic import BaseModel, Field
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger("PromptGuardBackend")
 
+# Detect if we are running in a serverless context (like Vercel)
+IS_VERCEL = os.environ.get("VERCEL") == "1" or os.environ.get("NOW_REGION") is not None
+
 # Database configurations
-DB_DIR = "data"
-DB_PATH = os.path.join(DB_DIR, "promptguard.db")
-CONFIG_PATH = os.path.join(DB_DIR, "calibration_config.json")
+if IS_VERCEL:
+    DB_DIR = "/tmp"
+    DB_PATH = "/tmp/promptguard.db"
+    CONFIG_PATH = "/tmp/calibration_config.json"
+    
+    # In Vercel, copy the baseline calibration config to /tmp if not present
+    baseline_config_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'data', 'calibration_config.json'))
+    if os.path.exists(baseline_config_path) and not os.path.exists(CONFIG_PATH):
+        try:
+            with open(baseline_config_path, 'r', encoding='utf-8') as f_in:
+                config_data = json.load(f_in)
+            with open(CONFIG_PATH, 'w', encoding='utf-8') as f_out:
+                json.dump(config_data, f_out, indent=4)
+        except Exception:
+            pass
+else:
+    DB_DIR = "data"
+    DB_PATH = os.path.join(DB_DIR, "promptguard.db")
+    CONFIG_PATH = os.path.join(DB_DIR, "calibration_config.json")
 
 # Template and Static configurations
 TEMPLATES_DIR = "templates"
