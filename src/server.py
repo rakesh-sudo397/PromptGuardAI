@@ -271,9 +271,11 @@ async def rate_limiting_middleware(request: Request, call_next):
         # Check browser session cookie
         session_token = request.cookies.get("session_token")
         if session_token:
+            import urllib.parse
+            decoded_token = urllib.parse.unquote(session_token)
             with get_db_connection() as conn:
                 cursor = conn.cursor()
-                cursor.execute("SELECT id FROM users WHERE username = ?", (session_token,))
+                cursor.execute("SELECT id FROM users WHERE username = ?", (decoded_token,))
                 row = cursor.fetchone()
                 if row:
                     user_id = row["id"]
@@ -550,9 +552,11 @@ def is_session_valid(session_token: str) -> bool:
     if not session_token:
         return False
     try:
+        import urllib.parse
+        decoded_token = urllib.parse.unquote(session_token)
         with get_db_connection() as conn:
             cursor = conn.cursor()
-            cursor.execute("SELECT id FROM users WHERE username = ?", (session_token,))
+            cursor.execute("SELECT id FROM users WHERE username = ?", (decoded_token,))
             return cursor.fetchone() is not None
     except Exception:
         return False
