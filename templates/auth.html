@@ -1,0 +1,249 @@
+{% extends "base.html" %}
+
+{% block title %}PromptGuard AI - Authentication{% endblock %}
+
+{% block extra_head %}
+<style>
+    /* Premium Auth Glassmorphism Styling */
+    .auth-wrapper {
+        min-height: calc(80vh - 100px);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 20px;
+    }
+
+    .auth-card {
+        background: rgba(30, 27, 46, 0.45);
+        backdrop-filter: blur(16px);
+        -webkit-backdrop-filter: blur(16px);
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        border-radius: 16px;
+        width: 100%;
+        max-width: 440px;
+        padding: 40px;
+        box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+        text-align: center;
+        position: relative;
+        overflow: hidden;
+    }
+
+    /* Decorative Glowing Orb */
+    .auth-card::before {
+        content: '';
+        position: absolute;
+        top: -50px;
+        right: -50px;
+        width: 150px;
+        height: 150px;
+        background: radial-gradient(circle, rgba(14, 165, 233, 0.2) 0%, transparent 70%);
+        z-index: 0;
+        pointer-events: none;
+    }
+
+    .auth-header {
+        position: relative;
+        z-index: 1;
+        margin-bottom: 30px;
+    }
+
+    .auth-header h1 {
+        font-size: 1.8rem;
+        font-weight: 700;
+        background: linear-gradient(135deg, #0ea5e9 0%, #a855f7 100%);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        margin-bottom: 8px;
+    }
+
+    .auth-header p {
+        color: #94a3b8;
+        font-size: 0.9rem;
+    }
+
+    /* Auth Toggle Switcher */
+    .auth-toggle-group {
+        display: flex;
+        background: rgba(15, 12, 28, 0.6);
+        border: 1px solid rgba(255, 255, 255, 0.05);
+        border-radius: 30px;
+        padding: 4px;
+        margin-bottom: 30px;
+        position: relative;
+        z-index: 1;
+    }
+
+    .auth-toggle-btn {
+        flex: 1;
+        background: none;
+        border: none;
+        color: #94a3b8;
+        padding: 10px;
+        font-size: 0.9rem;
+        font-weight: 600;
+        cursor: pointer;
+        border-radius: 25px;
+        transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    .auth-toggle-btn.active {
+        background: linear-gradient(135deg, #0ea5e9 0%, #a855f7 100%);
+        color: #ffffff;
+        box-shadow: 0 4px 15px rgba(168, 85, 247, 0.3);
+    }
+
+    /* Forms */
+    .auth-form {
+        display: none;
+        position: relative;
+        z-index: 1;
+    }
+
+    .auth-form.active {
+        display: block;
+        animation: fadeIn 0.4s ease-out forwards;
+    }
+
+    @keyframes fadeIn {
+        from { opacity: 0; transform: translateY(10px); }
+        to { opacity: 1; transform: translateY(0); }
+    }
+
+    .form-group {
+        margin-bottom: 20px;
+        text-align: left;
+    }
+
+    .form-group label {
+        display: block;
+        font-size: 0.8rem;
+        color: #94a3b8;
+        margin-bottom: 6px;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+    }
+
+    .form-input {
+        width: 100%;
+        background: rgba(15, 12, 28, 0.6);
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        border-radius: 8px;
+        padding: 12px 16px;
+        color: #f8fafc;
+        font-size: 0.95rem;
+        transition: all 0.3s ease;
+        outline: none;
+    }
+
+    .form-input:focus {
+        border-color: #a855f7;
+        box-shadow: 0 0 10px rgba(168, 85, 247, 0.25);
+        background: rgba(15, 12, 28, 0.8);
+    }
+
+    .submit-btn {
+        width: 100%;
+        background: linear-gradient(135deg, #0ea5e9 0%, #a855f7 100%);
+        border: none;
+        border-radius: 8px;
+        padding: 14px;
+        color: #ffffff;
+        font-size: 1rem;
+        font-weight: 700;
+        cursor: pointer;
+        transition: all 0.3s ease;
+        box-shadow: 0 4px 15px rgba(168, 85, 247, 0.2);
+        margin-top: 10px;
+    }
+
+    .submit-btn:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 6px 20px rgba(168, 85, 247, 0.35);
+    }
+
+    .submit-btn:active {
+        transform: translateY(0);
+    }
+
+    .auth-alert {
+        display: none;
+        background: rgba(239, 68, 68, 0.15);
+        border: 1px solid rgba(239, 68, 68, 0.3);
+        border-radius: 8px;
+        padding: 12px;
+        color: #f87171;
+        font-size: 0.85rem;
+        margin-bottom: 20px;
+        text-align: left;
+        line-height: 1.4;
+        animation: shake 0.5s ease-in-out;
+    }
+
+    @keyframes shake {
+        0%, 100% { transform: translateX(0); }
+        25% { transform: translateX(-4px); }
+        75% { transform: translateX(4px); }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="auth-wrapper">
+    <div class="auth-card">
+        <div class="auth-header">
+            <h1>PromptGuard AI</h1>
+            <p id="auth-subtext">Sign in to manage LLM security gateways</p>
+        </div>
+
+        <div class="auth-toggle-group">
+            <button id="toggle-login" class="auth-toggle-btn active" onclick="switchTab('login')">Sign In</button>
+            <button id="toggle-register" class="auth-toggle-btn" onclick="switchTab('register')">Register</button>
+        </div>
+
+        <!-- Alert Notification -->
+        <div id="auth-alert" class="auth-alert"></div>
+
+        <!-- Login Form -->
+        <form id="login-form" class="auth-form active" onsubmit="handleAuth(event, 'login')">
+            <div class="form-group">
+                <label for="login-username">Username</label>
+                <input type="text" id="login-username" class="form-input" placeholder="Enter username" required autocomplete="username">
+            </div>
+            <div class="form-group">
+                <label for="login-password">Password</label>
+                <input type="password" id="login-password" class="form-input" placeholder="••••••••" required autocomplete="current-password">
+            </div>
+            <button type="submit" class="submit-btn">Access Console</button>
+        </form>
+
+        <!-- Register Form -->
+        <form id="register-form" class="auth-form" onsubmit="handleAuth(event, 'register')">
+            <div class="form-group">
+                <label for="reg-username">Username</label>
+                <input type="text" id="reg-username" class="form-input" placeholder="Create username" required autocomplete="username">
+            </div>
+            <div class="form-group">
+                <label for="reg-password">Password</label>
+                <input type="password" id="reg-password" class="form-input" placeholder="••••••••" required autocomplete="new-password">
+            </div>
+            <div class="form-group">
+                <label for="reg-confirm">Confirm Password</label>
+                <input type="password" id="reg-confirm" class="form-input" placeholder="••••••••" required autocomplete="new-password">
+            </div>
+            <button type="submit" class="submit-btn">Create Developer Account</button>
+        </form>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="/static/js/auth.js"></script>
+<script>
+    // Hide navigation tabs on auth screen
+    const navTabs = document.querySelector('.tabs');
+    if (navTabs) {
+        navTabs.style.display = 'none';
+    }
+</script>
+{% endblock %}

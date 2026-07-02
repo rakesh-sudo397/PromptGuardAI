@@ -253,6 +253,48 @@
     </div>
 </div>
 
+<!-- Developer API Keys Manager Card -->
+<div class="card" style="margin-bottom: 2.5rem;">
+    <h2 style="margin-top: 0;">Developer API Key Management</h2>
+    <p style="color: var(--text-secondary); margin-top: -0.5rem; margin-bottom: 1.5rem; font-size: 0.9rem;">
+        Generate and revoke secure tokens (`pg_live_...`) to connect your external AI apps to the gateway.
+    </p>
+
+    <!-- Key Generation Input Form -->
+    <div style="display: flex; gap: 15px; margin-bottom: 1.5rem;">
+        <input type="text" id="new-key-name" class="form-input" style="flex: 1; max-width: 300px; background: rgba(0,0,0,0.2); border: 1px solid var(--border-color); border-radius: 8px; color: #fff; padding: 10px 14px;" placeholder="e.g. Production Backend Bot">
+        <button class="btn-primary" onclick="generateApiKey()">Generate New Key</button>
+    </div>
+
+    <!-- Hidden Newly Created Key Reveal Banner -->
+    <div id="new-key-reveal" style="display: none; background: rgba(16, 185, 129, 0.1); border: 1px dashed #10b981; border-radius: 8px; padding: 15px; margin-bottom: 20px; text-align: left;">
+        <span style="color: #10b981; font-weight: bold; display: block; margin-bottom: 5px;">🔑 API Key Created Successfully!</span>
+        <span style="color: var(--text-secondary); font-size: 0.85rem; display: block; margin-bottom: 10px;">Copy this secret token now. For your security, you will not be able to retrieve it again.</span>
+        <div style="display: flex; gap: 10px; align-items: center;">
+            <code id="new-key-value" style="font-size: 1rem; background: rgba(0,0,0,0.3); padding: 8px 12px; border-radius: 4px; display: block; flex: 1; word-break: break-all; color: #10b981; font-family: monospace;"></code>
+            <button class="btn-primary" style="padding: 8px 12px; font-size: 0.85rem;" onclick="copyNewKeyToClipboard()">Copy Key</button>
+        </div>
+    </div>
+
+    <!-- List of active keys -->
+    <table>
+        <thead>
+            <tr>
+                <th>Key Name</th>
+                <th>Prefix Identifier</th>
+                <th>Status</th>
+                <th>Created Date</th>
+                <th>Actions</th>
+            </tr>
+        </thead>
+        <tbody id="tblKeysBody">
+            <tr>
+                <td colspan="5" style="text-align: center; color: var(--text-secondary);">Retrieving active keys...</td>
+            </tr>
+        </tbody>
+    </table>
+</div>
+
 <!-- Interactive Model Performance Evaluation -->
 <div class="card" style="margin-bottom: 2.5rem;">
     <h2 style="margin-top: 0;">Interactive Model Evaluation Engine</h2>

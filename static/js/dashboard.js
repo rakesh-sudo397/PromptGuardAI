@@ -546,11 +546,123 @@ function renderShadowCharts(data) {
     }
 }
 
+// Fetch Developer API Keys list
+async function fetchApiKeys() {
+    try {
+        const res = await fetch('/api/v1/keys');
+        if (!res.ok) {
+            if (res.status === 401) {
+                window.location.href = '/auth';
+                return;
+            }
+            throw new Error('Failed to retrieve keys');
+        }
+        const keys = await res.json();
+        const tblBody = document.getElementById('tblKeysBody');
+        tblBody.innerHTML = '';
+
+        if (keys.length === 0) {
+            tblBody.innerHTML = `<tr><td colspan="5" style="text-align: center; color: var(--text-secondary);">No API keys generated yet.</td></tr>`;
+        } else {
+            keys.forEach(key => {
+                const row = document.createElement('tr');
+                const createdDate = new Date(key.created_at).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' });
+                const badgeClass = key.is_active ? 'badge bg-green' : 'badge bg-red';
+                const statusLabel = key.is_active ? 'Active' : 'Revoked';
+
+                row.innerHTML = `
+                    <td><strong>${key.key_name}</strong></td>
+                    <td><code style="font-family: monospace; color: #10b981;">${key.key_value}</code></td>
+                    <td><span class="${badgeClass}">${statusLabel}</span></td>
+                    <td>${createdDate}</td>
+                    <td>
+                        <button class="btn-primary" style="background: rgba(244, 63, 94, 0.1); border: 1px solid rgba(244, 63, 94, 0.4); color: #f43f5e; padding: 6px 12px; font-size: 0.8rem;" onclick="revokeApiKey(${key.id})">Revoke</button>
+                    </td>
+                `;
+                tblBody.appendChild(row);
+            });
+        }
+    } catch (err) {
+        console.error('Failed to load API keys:', err);
+    }
+}
+
+// Generate new developer API Key
+async function generateApiKey() {
+    const keyNameInput = document.getElementById('new-key-name');
+    const keyName = keyNameInput.value.trim();
+    if (!keyName) {
+        alert('Please enter a key description name.');
+        return;
+    }
+
+    try {
+        const response = await fetch('/api/v1/keys', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ key_name: keyName })
+        });
+        const data = await response.json();
+        if (!response.ok) {
+            alert(data.detail || 'Failed to create key.');
+            return;
+        }
+
+        // Show key reveal banner
+        const revealBanner = document.getElementById('new-key-reveal');
+        const revealVal = document.getElementById('new-key-value');
+        revealVal.innerText = data.key_value;
+        revealBanner.style.display = 'block';
+
+        // Clear input and reload keys table
+        keyNameInput.value = '';
+        fetchApiKeys();
+    } catch (err) {
+        console.error('Failed to create key:', err);
+    }
+}
+
+// Revoke API Key
+async function revokeApiKey(keyId) {
+    if (!confirm('Are you sure you want to revoke this API key? External apps using this key will immediately be blocked.')) {
+        return;
+    }
+
+    try {
+        const res = await fetch(`/api/v1/keys/${keyId}`, { method: 'DELETE' });
+        if (!res.ok) {
+            const data = await res.json();
+            alert(data.detail || 'Failed to revoke key.');
+            return;
+        }
+        // Reload keys table
+        fetchApiKeys();
+    } catch (err) {
+        console.error('Failed to revoke key:', err);
+    }
+}
+
+// Copy New Key to Clipboard
+function copyNewKeyToClipboard() {
+    const keyVal = document.getElementById('new-key-value').innerText;
+    navigator.clipboard.writeText(keyVal).then(() => {
+        const btn = document.querySelector('#new-key-reveal button');
+        const origText = btn.innerText;
+        btn.innerText = 'Copied!';
+        setTimeout(() => {
+            btn.innerText = origText;
+        }, 2000);
+    });
+}
+
 // Initial stats fetching and configuration load
 document.addEventListener('DOMContentLoaded', () => {
     fetchSystemStats();
     fetchShadowStats();
     loadCalibrationConfig();
+    fetchApiKeys();
     setInterval(() => {
         fetchSystemStats();
         fetchShadowStats();

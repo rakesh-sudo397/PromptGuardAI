@@ -21,7 +21,7 @@ from typing import Dict, Any, List
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 from fastapi import FastAPI, Request, HTTPException, status, Header
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from fastapi.middleware.cors import CORSMiddleware
@@ -76,7 +76,7 @@ from src.evaluate import run_evaluation_metrics
 
 def init_db():
     """
-    Verifies database scans table exists inside the data folder.
+    Verifies database tables exist inside the data folder.
     """
     conn = sqlite3.connect(DB_PATH)
     try:
@@ -93,6 +93,30 @@ def init_db():
                 latency_ms REAL NOT NULL
             )
         """)
+        
+        # Create users table
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS users (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                username TEXT NOT NULL UNIQUE,
+                password_hash TEXT NOT NULL,
+                created_at TEXT NOT NULL
+            )
+        """)
+        
+        # Create api_keys table
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS api_keys (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                key_value TEXT NOT NULL UNIQUE,
+                key_name TEXT NOT NULL,
+                rate_limit_per_window INTEGER NOT NULL DEFAULT 100,
+                is_active INTEGER NOT NULL DEFAULT 1,
+                created_at TEXT NOT NULL,
+                FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+            )
+        """)
         conn.commit()
         
         # Migration: check if client_ip column exists, if not add it
@@ -101,6 +125,14 @@ def init_db():
         except sqlite3.OperationalError:
             logger.info("Database migration: adding client_ip column to scans table.")
             cursor.execute("ALTER TABLE scans ADD COLUMN client_ip TEXT NOT NULL DEFAULT 'unknown'")
+            conn.commit()
+            
+        # Migration: check if user_id column exists in scans, if not add it
+        try:
+            cursor.execute("SELECT user_id FROM scans LIMIT 1")
+        except sqlite3.OperationalError:
+            logger.info("Database migration: adding user_id column to scans table.")
+            cursor.execute("ALTER TABLE scans ADD COLUMN user_id INTEGER DEFAULT NULL")
             conn.commit()
             
         logger.info("SQLite database verified/initialized successfully at: %s", DB_PATH)
@@ -165,19 +197,62 @@ WINDOW_SECONDS = 10    # In 10 seconds
 
 @app.middleware("http")
 async def rate_limiting_middleware(request: Request, call_next):
-    # Skip assets and HTML page views from rate limit check
-    if not request.url.path.startswith("/api/"):
+    # Skip assets, HTML views, and auth endpoints from authentication checks
+    if not request.url.path.startswith("/api/") or request.url.path.startswith("/api/v1/auth/"):
         return await call_next(request)
         
     client_ip = request.client.host
     now = time.time()
     
-    # Check X-API-Key to determine tier limit
+    # 1. Authenticate Request (API Key or Browser Cookie)
+    user_id = None
+    limit = 10  # Default free tier limit
+    
     api_key = request.headers.get("x-api-key")
-    if api_key == "pg_live_key_98213":
-        limit = 100
+    if api_key:
+        if api_key == "pg_live_key_98213":
+            # Legacy support
+            limit = 100
+        else:
+            with get_db_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute(
+                    "SELECT user_id, rate_limit_per_window FROM api_keys WHERE key_value = ? AND is_active = 1",
+                    (api_key,)
+                )
+                row = cursor.fetchone()
+                if row:
+                    user_id = row["user_id"]
+                    limit = row["rate_limit_per_window"]
+                else:
+                    return JSONResponse(
+                        status_code=status.HTTP_401_UNAUTHORIZED,
+                        content={"detail": "Invalid or inactive X-API-Key."}
+                    )
     else:
-        limit = 10
+        # Check browser session cookie
+        session_token = request.cookies.get("session_token")
+        if session_token:
+            with get_db_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute("SELECT id FROM users WHERE username = ?", (session_token,))
+                row = cursor.fetchone()
+                if row:
+                    user_id = row["id"]
+                    limit = 200 # Higher limit for dashboard session
+                else:
+                    return JSONResponse(
+                        status_code=status.HTTP_401_UNAUTHORIZED,
+                        content={"detail": "Session expired. Please log in again."}
+                    )
+        else:
+            return JSONResponse(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                content={"detail": "Authentication required. Supply X-API-Key header or session cookie."}
+            )
+            
+    # Store user_id or api_key in request state so endpoint can associate scan transaction
+    request.state.user_id = user_id
         
     if client_ip not in RATE_LIMIT_RECORD:
         RATE_LIMIT_RECORD[client_ip] = []
@@ -241,23 +316,225 @@ class CalibrationConfigSchema(BaseModel):
     boosting: CalibrationConfigBoosting
 
 
+class AuthRequest(BaseModel):
+    username: str = Field(..., min_length=3, max_length=50)
+    password: str = Field(..., min_length=6)
+
+
+@app.post("/api/v1/auth/signup")
+async def auth_signup(payload: AuthRequest):
+    username = payload.username.strip().lower()
+    password = payload.password
+    
+    try:
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            # Check if user already exists
+            cursor.execute("SELECT id FROM users WHERE username = ?", (username,))
+            if cursor.fetchone():
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Username is already registered."
+                )
+                
+            from src.core.auth import hash_password, generate_api_key
+            pwd_hash = hash_password(password)
+            created_at = datetime.datetime.now(datetime.timezone.utc).isoformat()
+            
+            cursor.execute(
+                "INSERT INTO users (username, password_hash, created_at) VALUES (?, ?, ?)",
+                (username, pwd_hash, created_at)
+            )
+            user_id = cursor.lastrowid
+            
+            # Automatically create a default active API key for this user
+            default_key = generate_api_key()
+            cursor.execute(
+                "INSERT INTO api_keys (user_id, key_value, key_name, rate_limit_per_window, is_active, created_at) VALUES (?, ?, ?, 100, 1, ?)",
+                (user_id, default_key, "Default Key", created_at)
+            )
+            conn.commit()
+            
+        logger.info("New developer account registered: %s (id=%d)", username, user_id)
+        return JSONResponse(content={"message": "Account created successfully."}, status_code=status.HTTP_201_CREATED)
+    except HTTPException as he:
+        raise he
+    except Exception as e:
+        logger.error("Signup failed: %s", e)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to register user account."
+        )
+
+
+@app.post("/api/v1/auth/login")
+async def auth_login(payload: AuthRequest):
+    username = payload.username.strip().lower()
+    password = payload.password
+    
+    try:
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT id, password_hash FROM users WHERE username = ?", (username,))
+            row = cursor.fetchone()
+            if not row:
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Invalid username or password."
+                )
+                
+            from src.core.auth import verify_password
+            if not verify_password(password, row["password_hash"]):
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Invalid username or password."
+                )
+                
+        logger.info("Developer login successful: %s", username)
+        return JSONResponse(content={"message": "Login successful."}, status_code=status.HTTP_200_OK)
+    except HTTPException as he:
+        raise he
+    except Exception as e:
+        logger.error("Login failed: %s", e)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Authentication failed."
+        )
+
+
+class KeyCreateRequest(BaseModel):
+    key_name: str = Field(..., min_length=1, max_length=100)
+
+
+@app.get("/api/v1/keys")
+async def get_api_keys(request: Request):
+    user_id = getattr(request.state, "user_id", None)
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+        
+    try:
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT id, key_name, key_value, is_active, created_at FROM api_keys WHERE user_id = ? ORDER BY id DESC",
+                (user_id,)
+            )
+            rows = cursor.fetchall()
+            keys = []
+            for row in rows:
+                val = row["key_value"]
+                masked_val = f"{val[:12]}...{val[-4:]}" if len(val) > 16 else val
+                keys.append({
+                    "id": row["id"],
+                    "key_name": row["key_name"],
+                    "key_value": masked_val,
+                    "is_active": bool(row["is_active"]),
+                    "created_at": row["created_at"]
+                })
+            return JSONResponse(content=keys, status_code=status.HTTP_200_OK)
+    except Exception as e:
+        logger.error("Failed to fetch API keys: %s", e)
+        raise HTTPException(status_code=500, detail="Database fetch error.")
+
+
+@app.post("/api/v1/keys")
+async def create_api_key(payload: KeyCreateRequest, request: Request):
+    user_id = getattr(request.state, "user_id", None)
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+        
+    try:
+        from src.core.auth import generate_api_key
+        new_key = generate_api_key()
+        created_at = datetime.datetime.now(datetime.timezone.utc).isoformat()
+        
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "INSERT INTO api_keys (user_id, key_value, key_name, rate_limit_per_window, is_active, created_at) VALUES (?, ?, ?, 100, 1, ?)",
+                (user_id, new_key, payload.key_name, created_at)
+            )
+            conn.commit()
+            key_id = cursor.lastrowid
+            
+        logger.info("New API key generated for user_id=%d: %s (id=%d)", user_id, payload.key_name, key_id)
+        return JSONResponse(content={
+            "id": key_id,
+            "key_name": payload.key_name,
+            "key_value": new_key,
+            "created_at": created_at
+        }, status_code=status.HTTP_201_CREATED)
+    except Exception as e:
+        logger.error("Failed to create API key: %s", e)
+        raise HTTPException(status_code=500, detail="Database write error.")
+
+
+@app.delete("/api/v1/keys/{key_id}")
+async def delete_api_key(key_id: int, request: Request):
+    user_id = getattr(request.state, "user_id", None)
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+        
+    try:
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT id FROM api_keys WHERE id = ? AND user_id = ?", (key_id, user_id))
+            if not cursor.fetchone():
+                raise HTTPException(status_code=404, detail="API key not found or access denied.")
+                
+            cursor.execute("DELETE FROM api_keys WHERE id = ?", (key_id,))
+            conn.commit()
+            
+        logger.info("API key revoked: id=%d by user_id=%d", key_id, user_id)
+        return JSONResponse(content={"message": "API key revoked successfully."}, status_code=status.HTTP_200_OK)
+    except HTTPException as he:
+        raise he
+    except Exception as e:
+        logger.error("Failed to delete API key: %s", e)
+        raise HTTPException(status_code=500, detail="Database delete error.")
+
+
 # ==========================================
 # PAGE ROUTING
 # ==========================================
 
 @app.get("/", response_class=HTMLResponse)
 async def serve_root(request: Request):
-    return templates.TemplateResponse(request=request, name="sandbox.html")
+    session_token = request.cookies.get("session_token")
+    if not session_token:
+        return RedirectResponse(url="/auth")
+    return RedirectResponse(url="/sandbox")
+
+
+@app.get("/auth", response_class=HTMLResponse)
+async def serve_auth(request: Request):
+    session_token = request.cookies.get("session_token")
+    if session_token:
+        return RedirectResponse(url="/sandbox")
+    return templates.TemplateResponse(request=request, name="auth.html")
 
 
 @app.get("/sandbox", response_class=HTMLResponse)
 async def serve_sandbox(request: Request):
+    session_token = request.cookies.get("session_token")
+    if not session_token:
+        return RedirectResponse(url="/auth")
     return templates.TemplateResponse(request=request, name="sandbox.html")
 
 
 @app.get("/dashboard", response_class=HTMLResponse)
 async def serve_dashboard(request: Request):
+    session_token = request.cookies.get("session_token")
+    if not session_token:
+        return RedirectResponse(url="/auth")
     return templates.TemplateResponse(request=request, name="dashboard.html")
+
+
+@app.get("/logout")
+async def serve_logout():
+    response = RedirectResponse(url="/auth")
+    response.delete_cookie("session_token")
+    return response
 
 
 # ==========================================
@@ -352,16 +629,11 @@ def call_openai_completion_api(prompt: str, model_name: str, token: str) -> str:
 
 
 @app.post("/api/v1/scan")
-async def scan_prompt(payload: ScanRequest, request: Request, x_api_key: str = Header(None)):
+async def scan_prompt(payload: ScanRequest, request: Request):
     """
     Accepts prompt strings, runs de-obfuscation / PII / Auto-scrub filters,
     invokes the hybrid classifier, validates outputs, logs transactions, and returns metrics.
     """
-    if x_api_key != API_KEY:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid or missing API key."
-        )
 
     start_time = time.perf_counter()
     
@@ -462,15 +734,16 @@ async def scan_prompt(payload: ScanRequest, request: Request, x_api_key: str = H
         }
 
     # 6. Commit transaction records to SQLite (with hashed client IP)
+    user_id = getattr(request.state, "user_id", None)
     try:
         with get_db_connection() as conn:
             cursor = conn.cursor()
             cursor.execute(
                 """
-                INSERT INTO scans (timestamp, client_ip, prompt_text, risk_score, is_blocked, category, latency_ms)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO scans (timestamp, client_ip, prompt_text, risk_score, is_blocked, category, latency_ms, user_id)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 """,
-                (timestamp, hashed_ip, payload.prompt, risk_score, is_blocked_val, category, latency_ms)
+                (timestamp, hashed_ip, payload.prompt, risk_score, is_blocked_val, category, latency_ms, user_id)
             )
             conn.commit()
     except sqlite3.Error as db_err:
@@ -494,10 +767,11 @@ async def scan_prompt(payload: ScanRequest, request: Request, x_api_key: str = H
 
 
 @app.get("/api/v1/metrics")
-async def get_metrics():
+async def get_metrics(request: Request):
     """
     Computes statistical telemetry aggregations from the audits table.
     """
+    user_id = getattr(request.state, "user_id", None)
     try:
         with get_db_connection() as conn:
             cursor = conn.cursor()
@@ -509,7 +783,8 @@ async def get_metrics():
                     AVG(risk_score) as average_risk,
                     AVG(latency_ms) as average_latency
                 FROM scans
-            """)
+                WHERE user_id = ? OR (? IS NULL AND user_id IS NULL)
+            """, (user_id, user_id))
             summary_row = cursor.fetchone()
             
             total_scans = summary_row["total_scans"] or 0
@@ -520,8 +795,9 @@ async def get_metrics():
             cursor.execute("""
                 SELECT category, COUNT(*) as count
                 FROM scans
+                WHERE user_id = ? OR (? IS NULL AND user_id IS NULL)
                 GROUP BY category
-            """)
+            """, (user_id, user_id))
             distribution_rows = cursor.fetchall()
             threat_distribution = {row["category"]: row["count"] for row in distribution_rows}
             
@@ -544,19 +820,21 @@ async def get_metrics():
 
 
 @app.get("/api/v1/logs")
-async def get_recent_logs():
+async def get_recent_logs(request: Request):
     """
     Retrieves the last 10 scan log entries.
     """
+    user_id = getattr(request.state, "user_id", None)
     try:
         with get_db_connection() as conn:
             cursor = conn.cursor()
             cursor.execute("""
                 SELECT timestamp, client_ip, prompt_text, risk_score, is_blocked, category, latency_ms
                 FROM scans
+                WHERE user_id = ? OR (? IS NULL AND user_id IS NULL)
                 ORDER BY id DESC
                 LIMIT 10
-            """)
+            """, (user_id, user_id))
             rows = cursor.fetchall()
             logs = [dict(row) for row in rows]
             return JSONResponse(content=logs, status_code=status.HTTP_200_OK)
@@ -612,19 +890,21 @@ async def trigger_pipeline_evaluation():
 
 
 @app.get("/api/v1/shadow_analytics")
-async def get_shadow_analytics():
+async def get_shadow_analytics(request: Request):
     """
     Retrospectively analyzes the last 30 scans to compile comparative A/B shadow metrics
     (agreement rates, latency splits, threat distributions).
     """
+    user_id = getattr(request.state, "user_id", None)
     try:
         with get_db_connection() as conn:
             cursor = conn.cursor()
             cursor.execute("""
                 SELECT prompt_text, latency_ms FROM scans
+                WHERE user_id = ? OR (? IS NULL AND user_id IS NULL)
                 ORDER BY id DESC
                 LIMIT 30
-            """)
+            """, (user_id, user_id))
             rows = cursor.fetchall()
             
         total = len(rows)
