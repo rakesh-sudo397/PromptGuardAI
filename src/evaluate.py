@@ -7,10 +7,6 @@ Purpose: Evaluates the multi-class model, saves a 4x4 Confusion Matrix, and retu
 import sys
 import os
 import pickle
-import pandas as pd
-import matplotlib.pyplot as plt
-import seaborn as sns
-from datasets import load_dataset
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import classification_report, confusion_matrix, accuracy_score
 
@@ -21,6 +17,11 @@ from src.preprocessing import clean_text
 from src.core.multiclass_trainer import assign_threat_category
 
 def evaluate_model():
+    import pandas as pd
+    import matplotlib.pyplot as plt
+    import seaborn as sns
+    from datasets import load_dataset
+    
     print("=========================================")
     print("EVALUATING MULTI-CLASS MODEL PERFORMANCE")
     print("=========================================")
@@ -111,6 +112,9 @@ def run_evaluation_metrics() -> dict:
     Computes classification evaluation metrics and confusion matrix values.
     Returns a dictionary suitable for API responses.
     """
+    import pandas as pd
+    from datasets import load_dataset
+    
     # 1. Load dataset and split
     try:
         ds1 = load_dataset("deepset/prompt-injections", split="train")
