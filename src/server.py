@@ -498,35 +498,55 @@ async def delete_api_key(key_id: int, request: Request):
 # PAGE ROUTING
 # ==========================================
 
+def is_session_valid(session_token: str) -> bool:
+    if not session_token:
+        return False
+    try:
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT id FROM users WHERE username = ?", (session_token,))
+            return cursor.fetchone() is not None
+    except Exception:
+        return False
+
+
 @app.get("/", response_class=HTMLResponse)
 async def serve_root(request: Request):
     session_token = request.cookies.get("session_token")
-    if not session_token:
-        return RedirectResponse(url="/auth")
+    if not is_session_valid(session_token):
+        response = RedirectResponse(url="/auth")
+        response.delete_cookie("session_token")
+        return response
     return RedirectResponse(url="/sandbox")
 
 
 @app.get("/auth", response_class=HTMLResponse)
 async def serve_auth(request: Request):
     session_token = request.cookies.get("session_token")
-    if session_token:
+    if is_session_valid(session_token):
         return RedirectResponse(url="/sandbox")
-    return templates.TemplateResponse(request=request, name="auth.html")
+    response = templates.TemplateResponse(request=request, name="auth.html")
+    response.delete_cookie("session_token")
+    return response
 
 
 @app.get("/sandbox", response_class=HTMLResponse)
 async def serve_sandbox(request: Request):
     session_token = request.cookies.get("session_token")
-    if not session_token:
-        return RedirectResponse(url="/auth")
+    if not is_session_valid(session_token):
+        response = RedirectResponse(url="/auth")
+        response.delete_cookie("session_token")
+        return response
     return templates.TemplateResponse(request=request, name="sandbox.html")
 
 
 @app.get("/dashboard", response_class=HTMLResponse)
 async def serve_dashboard(request: Request):
     session_token = request.cookies.get("session_token")
-    if not session_token:
-        return RedirectResponse(url="/auth")
+    if not is_session_valid(session_token):
+        response = RedirectResponse(url="/auth")
+        response.delete_cookie("session_token")
+        return response
     return templates.TemplateResponse(request=request, name="dashboard.html")
 
 

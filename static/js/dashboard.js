@@ -8,6 +8,13 @@ async function fetchSystemStats() {
     try {
         // 1. Fetch telemetry metrics
         const resMetrics = await fetch('/api/v1/metrics');
+        if (!resMetrics.ok) {
+            if (resMetrics.status === 401) {
+                window.location.href = '/logout';
+                return;
+            }
+            throw new Error('Metrics fetch failed');
+        }
         const data = await resMetrics.json();
         
         document.getElementById('valTotal').innerText = data.total_scans;
@@ -34,6 +41,13 @@ async function fetchSystemStats() {
 
         // 3. Fetch Recent Audit Logs
         const resLogs = await fetch('/api/v1/logs');
+        if (!resLogs.ok) {
+            if (resLogs.status === 401) {
+                window.location.href = '/logout';
+                return;
+            }
+            throw new Error('Logs fetch failed');
+        }
         const logs = await resLogs.json();
 
         const logsBody = document.getElementById('tblLogsBody');
@@ -396,6 +410,13 @@ async function runPerformanceEvaluation() {
 async function fetchShadowStats() {
     try {
         const res = await fetch('/api/v1/shadow_analytics');
+        if (!res.ok) {
+            if (res.status === 401) {
+                window.location.href = '/logout';
+                return;
+            }
+            throw new Error('Shadow analytics fetch failed');
+        }
         const data = await res.json();
         
         document.getElementById('valAgreementRate').innerText = data.agreement_rate.toFixed(2) + '%';
