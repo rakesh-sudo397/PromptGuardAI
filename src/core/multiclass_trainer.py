@@ -9,6 +9,7 @@ import pandas as pd
 from datasets import load_dataset
 from sklearn.model_selection import train_test_split
 from sklearn.linear_model import LogisticRegression
+from sklearn.svm import LinearSVC
 from sklearn.metrics import classification_report
 from src.preprocessing import clean_text
 
@@ -92,14 +93,13 @@ def train_multiclass_model():
     y_train = train_df['multiclass_label']
     y_test = test_df['multiclass_label']
     
-    # 5. Fit Multinomial Logistic Regression model
-    print("Fitting multinomial logistic regression classifier...")
-    # Unweighted and compatible with all scikit-learn versions
-    model = LogisticRegression(
-        solver='lbfgs', 
-        random_state=42, 
-        max_iter=1000,
-        class_weight='balanced'
+    # 5. Fit Support Vector Classifier model
+    print("Fitting Support Vector Classifier (LinearSVC)...")
+    model = LinearSVC(
+        C=0.2,
+        class_weight={0: 1.0, 1: 1.8, 2: 2.5, 3: 2.5},
+        random_state=42,
+        max_iter=2000
     )
     model.fit(X_train, y_train)
     

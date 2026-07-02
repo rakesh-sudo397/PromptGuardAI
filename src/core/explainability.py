@@ -38,14 +38,26 @@ def explain_prompt(prompt: str) -> dict:
         
     X_tfidf = vectorizer.transform([cleaned])
     
-       # 3. Predict class and probabilities
+    # 3. Predict class and probabilities
     pred_class_idx = model.predict(X_tfidf)[0]
-    probabilities = model.predict_proba(X_tfidf)[0]
+    
+    if hasattr(model, "predict_proba"):
+        probabilities = model.predict_proba(X_tfidf)[0]
+    else:
+        # Fallback for models without predict_proba (like LinearSVC)
+        dec_scores = model.decision_function(X_tfidf)[0]
+        if np.isscalar(dec_scores) or dec_scores.ndim == 0:
+            p = 1.0 / (1.0 + np.exp(-dec_scores))
+            probabilities = np.array([1.0 - p, p])
+        elif len(dec_scores) == 1:
+            p = 1.0 / (1.0 + np.exp(-dec_scores[0]))
+            probabilities = np.array([1.0 - p, p])
+        else:
+            exp_scores = np.exp(dec_scores - np.max(dec_scores))
+            probabilities = exp_scores / exp_scores.sum()
+            
     pred_prob = probabilities[pred_class_idx]
-    
     category_name = CLASS_MAP[pred_class_idx]
-    
-    # Calculate the total threat probability (1.0 - P(Clean))
     threat_prob = float(1.0 - probabilities[0])
     
     # If the prompt is clean, we don't need to return attack explanations
