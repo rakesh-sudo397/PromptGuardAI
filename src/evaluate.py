@@ -14,13 +14,13 @@ from sklearn.metrics import classification_report, confusion_matrix, accuracy_sc
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 from src.preprocessing import clean_text
-from src.core.multiclass_trainer import assign_threat_category
 
 def evaluate_model():
     import pandas as pd
     import matplotlib.pyplot as plt
     import seaborn as sns
     from datasets import load_dataset
+    from src.core.multiclass_trainer import assign_threat_category
     
     print("=========================================")
     print("EVALUATING MULTI-CLASS MODEL PERFORMANCE")
@@ -114,6 +114,7 @@ def run_evaluation_metrics() -> dict:
     """
     import pandas as pd
     from datasets import load_dataset
+    from src.core.multiclass_trainer import assign_threat_category
     
     # 1. Load dataset and split
     try:
