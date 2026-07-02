@@ -26,7 +26,7 @@ def evaluate_model():
     print("=========================================")
     
     # 1. Load dataset and split (Must match splits from training)
-    print("Loading combined datasets (deepset, xTRam1, neuralchemy) from Hugging Face...")
+    print("Loading combined datasets (deepset, xTRam1, neuralchemy, imoxto) from Hugging Face...")
     try:
         ds1 = load_dataset("deepset/prompt-injections", split="train")
         df1 = pd.DataFrame(ds1)[['text', 'label']]
@@ -34,7 +34,10 @@ def evaluate_model():
         df2 = pd.DataFrame(ds2)[['text', 'label']]
         ds3 = load_dataset("neuralchemy/Prompt-injection-dataset", split="train")
         df3 = pd.DataFrame(ds3)[['text', 'label']]
-        df = pd.concat([df1, df2, df3], ignore_index=True)
+        ds4 = load_dataset("imoxto/prompt_injection_cleaned_dataset-v2", split="train")
+        df4 = pd.DataFrame(ds4)[['text', 'labels']].rename(columns={'labels': 'label'})
+        df4 = df4.sample(n=min(10000, len(df4)), random_state=42)
+        df = pd.concat([df1, df2, df3, df4], ignore_index=True)
         df['label'] = df['label'].astype(int)
     except Exception as e:
         print(f"Error combining datasets: {e}. Falling back to default deepset/prompt-injections.")
@@ -116,7 +119,10 @@ def run_evaluation_metrics() -> dict:
         df2 = pd.DataFrame(ds2)[['text', 'label']]
         ds3 = load_dataset("neuralchemy/Prompt-injection-dataset", split="train")
         df3 = pd.DataFrame(ds3)[['text', 'label']]
-        df = pd.concat([df1, df2, df3], ignore_index=True)
+        ds4 = load_dataset("imoxto/prompt_injection_cleaned_dataset-v2", split="train")
+        df4 = pd.DataFrame(ds4)[['text', 'labels']].rename(columns={'labels': 'label'})
+        df4 = df4.sample(n=min(10000, len(df4)), random_state=42)
+        df = pd.concat([df1, df2, df3, df4], ignore_index=True)
         df['label'] = df['label'].astype(int)
     except Exception as e:
         dataset = load_dataset("deepset/prompt-injections", split="train")

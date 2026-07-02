@@ -16,7 +16,7 @@ def build_vectorizer():
     print("=========================================")
     
     # 1. Load the dataset
-    print("Loading combined datasets (deepset, xTRam1, neuralchemy) from Hugging Face...")
+    print("Loading combined datasets (deepset, xTRam1, neuralchemy, imoxto) from Hugging Face...")
     try:
         ds1 = load_dataset("deepset/prompt-injections", split="train")
         df1 = pd.DataFrame(ds1)[['text', 'label']]
@@ -24,7 +24,10 @@ def build_vectorizer():
         df2 = pd.DataFrame(ds2)[['text', 'label']]
         ds3 = load_dataset("neuralchemy/Prompt-injection-dataset", split="train")
         df3 = pd.DataFrame(ds3)[['text', 'label']]
-        df = pd.concat([df1, df2, df3], ignore_index=True)
+        ds4 = load_dataset("imoxto/prompt_injection_cleaned_dataset-v2", split="train")
+        df4 = pd.DataFrame(ds4)[['text', 'labels']].rename(columns={'labels': 'label'})
+        df4 = df4.sample(n=min(10000, len(df4)), random_state=42)
+        df = pd.concat([df1, df2, df3, df4], ignore_index=True)
         df['label'] = df['label'].astype(int)
     except Exception as e:
         print(f"Error combining datasets: {e}. Falling back to default deepset/prompt-injections.")
@@ -38,7 +41,7 @@ def build_vectorizer():
     # 3. Initialize the TF-IDF Vectorizer
     # We use a max of 1000 features and set ngram_range=(1, 2) 
     # to capture single words and two-word phrases (like "ignore instructions")
-    vectorizer = TfidfVectorizer(max_features=1000, ngram_range=(1, 2))
+    vectorizer = TfidfVectorizer(max_features=3000, ngram_range=(1, 2))
     
     # 4. Fit the vectorizer on our cleaned text
     print("Fitting vectorizer on cleaned text...")
