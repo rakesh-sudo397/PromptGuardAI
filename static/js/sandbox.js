@@ -12,6 +12,11 @@ async function executeSecurityCheck() {
     const enableRedact = document.getElementById('chkRedact')?.checked || false;
     const enableFirewall = document.getElementById('chkFirewall')?.checked || false;
     const enableShadow = document.getElementById('chkShadow')?.checked || false;
+    
+    // Retrieve downstream target settings
+    const downstreamType = document.getElementById('selDownstreamType')?.value || 'mock';
+    const downstreamModel = document.getElementById('txtDownstreamModel')?.value.trim() || '';
+    const downstreamToken = document.getElementById('txtDownstreamToken')?.value.trim() || '';
 
     // Reset UI cards
     const outputContainer = document.getElementById('pnlOutput');
@@ -39,7 +44,10 @@ async function executeSecurityCheck() {
                 enable_scrub: enableScrub,
                 enable_redact: enableRedact,
                 enable_firewall: enableFirewall,
-                enable_shadow: enableShadow
+                enable_shadow: enableShadow,
+                downstream_type: downstreamType,
+                downstream_model: downstreamModel,
+                downstream_token: downstreamToken
             })
         });
 
@@ -108,7 +116,7 @@ async function executeSecurityCheck() {
         }
 
         // 6. Render LLM Output & Output Firewall card
-        if (enableFirewall && payload.llm_output) {
+        if ((enableFirewall || downstreamType !== 'mock') && payload.llm_output) {
             firewallCard.style.display = 'block';
             const firewallBadge = document.getElementById('lblFirewallStatus');
             const firewallText = document.getElementById('valFirewallText');
@@ -141,5 +149,25 @@ async function executeSecurityCheck() {
     } finally {
         scanBtn.innerText = originalBtnText;
         scanBtn.disabled = false;
+    }
+}
+
+function toggleDownstreamFields() {
+    const type = document.getElementById('selDownstreamType').value;
+    const modelDiv = document.getElementById('divModelName');
+    const tokenDiv = document.getElementById('divToken');
+    const modelInput = document.getElementById('txtDownstreamModel');
+    
+    if (type === 'mock') {
+        modelDiv.style.display = 'none';
+        tokenDiv.style.display = 'none';
+    } else {
+        modelDiv.style.display = 'block';
+        tokenDiv.style.display = 'block';
+        if (type === 'openai') {
+            modelInput.placeholder = 'e.g. gpt-4o-mini';
+        } else {
+            modelInput.placeholder = 'e.g. meta-llama/Llama-3.2-1B-Instruct';
+        }
     }
 }

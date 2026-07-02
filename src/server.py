@@ -13,6 +13,7 @@ import datetime
 import random
 import json
 import hashlib
+import urllib.request
 from contextlib import asynccontextmanager, contextmanager
 from typing import Dict, Any, List
 
@@ -196,6 +197,9 @@ class ScanRequest(BaseModel):
     enable_redact: bool = False
     enable_firewall: bool = False
     enable_shadow: bool = False
+    downstream_type: str = "mock"
+    downstream_model: str = ""
+    downstream_token: str = ""
 
 
 class CalibrationConfigDampening(BaseModel):
@@ -254,6 +258,80 @@ def scan_llm_output(output: str) -> bool:
     return any(trigger in output_lower for trigger in firewall_triggers)
 
 
+def call_huggingface_inference_api(prompt: str, model_id: str, token: str) -> str:
+    """
+    Queries HuggingFace Serverless Inference API.
+    """
+    url = f"https://api-inference.huggingface.co/models/{model_id}"
+    headers = {
+        "Content-Type": "application/json"
+    }
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+        
+    payload_data = {
+        "inputs": prompt,
+        "parameters": {
+            "max_new_tokens": 150,
+            "return_full_text": False
+        }
+    }
+    
+    try:
+        req = urllib.request.Request(
+            url,
+            data=json.dumps(payload_data).encode("utf-8"),
+            headers=headers,
+            method="POST"
+        )
+        with urllib.request.urlopen(req, timeout=10) as response:
+            res_body = response.read().decode("utf-8")
+            res_json = json.loads(res_body)
+            if isinstance(res_json, list) and len(res_json) > 0:
+                return res_json[0].get("generated_text", "").strip()
+            elif isinstance(res_json, dict):
+                if "error" in res_json:
+                    return f"HuggingFace API Error: {res_json['error']}"
+                return res_json.get("generated_text", str(res_json))
+            return str(res_json)
+    except Exception as e:
+        logger.error("Hugging Face API call failed: %s", e)
+        return f"Error contacting Hugging Face Downstream: {str(e)}"
+
+
+def call_openai_completion_api(prompt: str, model_name: str, token: str) -> str:
+    """
+    Queries OpenAI Chat Completion API.
+    """
+    url = "https://api.openai.com/v1/chat/completions"
+    headers = {
+        "Content-Type": "application/json",
+        "Authorization": f"Bearer {token}"
+    }
+    payload_data = {
+        "model": model_name,
+        "messages": [{"role": "user", "content": prompt}],
+        "max_tokens": 150
+    }
+    try:
+        req = urllib.request.Request(
+            url,
+            data=json.dumps(payload_data).encode("utf-8"),
+            headers=headers,
+            method="POST"
+        )
+        with urllib.request.urlopen(req, timeout=10) as response:
+            res_body = response.read().decode("utf-8")
+            res_json = json.loads(res_body)
+            choices = res_json.get("choices", [])
+            if choices:
+                return choices[0].get("message", {}).get("content", "").strip()
+            return str(res_json)
+    except Exception as e:
+        logger.error("OpenAI API call failed: %s", e)
+        return f"Error contacting OpenAI Downstream: {str(e)}"
+
+
 @app.post("/api/v1/scan")
 async def scan_prompt(payload: ScanRequest, request: Request, x_api_key: str = Header(None)):
     """
@@ -304,28 +382,34 @@ async def scan_prompt(payload: ScanRequest, request: Request, x_api_key: str = H
     category = str(result.get("category", "Clean"))
     timestamp = datetime.datetime.now(datetime.timezone.utc).isoformat()
     
-    # 4. Simulated LLM Generation & Output Firewall Guard
+    # 4. LLM Generation (Mock or Downstream APIs)
     llm_output = None
     firewall_blocked = False
-    if payload.enable_firewall and is_safe:
-        # Simulate LLM response containing system info if malicious-like terms are in prompt
-        prompt_lower = payload.prompt.lower()
-        if "leak" in prompt_lower or "rules" in prompt_lower:
-            llm_output = "Here are my system rules: You are a simulated system administrator assistant. Access code: pg_live_key_98213."
-        elif "password" in prompt_lower:
-            llm_output = "My secret password is pg_live_key_98213."
+    if is_safe and (payload.enable_firewall or payload.downstream_type != "mock"):
+        if payload.downstream_type == "huggingface" and payload.downstream_model:
+            llm_output = call_huggingface_inference_api(scan_target, payload.downstream_model, payload.downstream_token)
+        elif payload.downstream_type == "openai" and payload.downstream_model:
+            llm_output = call_openai_completion_api(scan_target, payload.downstream_model, payload.downstream_token)
         else:
-            llm_output = f"Simulated LLM Response: Based on your request about '{scan_target[:40]}', here is a helpful explanation of the security details."
+            # Simulate LLM response containing system info if malicious-like terms are in prompt
+            prompt_lower = payload.prompt.lower()
+            if "leak" in prompt_lower or "rules" in prompt_lower:
+                llm_output = "Here are my system rules: You are a simulated system administrator assistant. Access code: pg_live_key_98213."
+            elif "password" in prompt_lower:
+                llm_output = "My secret password is pg_live_key_98213."
+            else:
+                llm_output = f"Simulated LLM Response: Based on your request about '{scan_target[:40]}', here is a helpful explanation of the security details."
             
-        # Check LLM response via Firewall
-        firewall_blocked = scan_llm_output(llm_output)
-        
-        # If output firewall blocks, we adjust main scan indicators
-        if firewall_blocked:
-            is_safe = False
-            is_blocked_val = 1
-            category = "Output Firewall Block"
-            risk_score = max(risk_score, 0.95)
+        # Check LLM response via Firewall if enabled
+        if payload.enable_firewall and llm_output:
+            firewall_blocked = scan_llm_output(llm_output)
+            
+            # If output firewall blocks, we adjust main scan indicators
+            if firewall_blocked:
+                is_safe = False
+                is_blocked_val = 1
+                category = "Output Firewall Block"
+                risk_score = max(risk_score, 0.95)
 
     # 5. A/B Shadow Mode evaluation
     shadow_report = None
