@@ -79,6 +79,7 @@ def init_db():
     Verifies database tables exist inside the data folder.
     """
     conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
     try:
         cursor = conn.cursor()
         cursor.execute("""
@@ -219,6 +220,9 @@ app = FastAPI(
     version="1.0.0",
     lifespan=lifespan
 )
+
+# Run database setup and developer seeding immediately on module load (critical for serverless runtimes that skip lifespan events)
+init_db()
 
 # CORS Policy configuration
 app.add_middleware(
