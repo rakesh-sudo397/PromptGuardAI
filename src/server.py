@@ -134,7 +134,45 @@ def init_db():
             logger.info("Database migration: adding user_id column to scans table.")
             cursor.execute("ALTER TABLE scans ADD COLUMN user_id INTEGER DEFAULT NULL")
             conn.commit()
+        # Seed default developer credentials (persists developer account across serverless container resets)
+        from src.core.auth import hash_password
+        dev_username = "rakeshnpvrt@gmail.com"
+        dev_password = os.environ.get("DEV_PASSWORD", "rakeshnpvrt123")
+        dev_password_hash = hash_password(dev_password)
+        
+        cursor.execute("SELECT id FROM users WHERE username = ?", (dev_username,))
+        row = cursor.fetchone()
+        created_at = datetime.datetime.now(datetime.timezone.utc).isoformat()
+        if not row:
+            cursor.execute(
+                "INSERT INTO users (username, password_hash, created_at) VALUES (?, ?, ?)",
+                (dev_username, dev_password_hash, created_at)
+            )
+            user_id = cursor.lastrowid
             
+            # Seed default API Key
+            cursor.execute(
+                "INSERT INTO api_keys (user_id, key_value, key_name, rate_limit_per_window, is_active, created_at) VALUES (?, ?, ?, 100, 1, ?)",
+                (user_id, "pg_live_key_98213", "Default Key", created_at)
+            )
+            conn.commit()
+            logger.info("Pre-seeded default developer account and key into database.")
+        else:
+            user_id = row["id"]
+            cursor.execute(
+                "UPDATE users SET password_hash = ? WHERE id = ?",
+                (dev_password_hash, user_id)
+            )
+            
+            # Verify default API key exists
+            cursor.execute("SELECT id FROM api_keys WHERE key_value = 'pg_live_key_98213'")
+            if not cursor.fetchone():
+                cursor.execute(
+                    "INSERT INTO api_keys (user_id, key_value, key_name, rate_limit_per_window, is_active, created_at) VALUES (?, ?, ?, 100, 1, ?)",
+                    (user_id, "pg_live_key_98213", "Default Key", created_at)
+                )
+            conn.commit()
+
         logger.info("SQLite database verified/initialized successfully at: %s", DB_PATH)
     except sqlite3.Error as e:
         logger.error("Failed to initialize database schemas: %s", e)
