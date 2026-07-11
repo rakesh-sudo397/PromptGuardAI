@@ -99,8 +99,9 @@ function renderCharts(threatDistribution, logs) {
     const counts = Object.values(threatDistribution);
 
     const threatOptions = {
-        series: counts.length > 0 ? counts : [1],
+        series: counts.length > 0 ? counts : [0],
         chart: {
+            id: 'threat-chart',
             type: 'donut',
             height: 280,
             background: 'transparent',
@@ -132,6 +133,7 @@ function renderCharts(threatDistribution, logs) {
                             label: 'Total Scans',
                             color: '#94a3b8',
                             formatter: function (w) {
+                                if (counts.length === 0) return 0;
                                 return w.globals.seriesTotals.reduce((a, b) => a + b, 0)
                             }
                         }
@@ -164,6 +166,7 @@ function renderCharts(threatDistribution, logs) {
             data: latencyData.length > 0 ? latencyData : [0]
         }],
         chart: {
+            id: 'latency-chart',
             type: 'area',
             height: 280,
             background: 'transparent',
@@ -438,8 +441,9 @@ function renderShadowCharts(data) {
     const series = [splits.clean, splits.rules_only, splits.ml_only, splits.both];
     
     const splitOptions = {
-        series: series.some(s => s > 0) ? series : [1, 0, 0, 0],
+        series: series.some(s => s > 0) ? series : [0, 0, 0, 0],
         chart: {
+            id: 'shadow-split-chart',
             type: 'donut',
             height: 280,
             background: 'transparent',
@@ -471,6 +475,7 @@ function renderShadowCharts(data) {
                             label: 'Total Scans',
                             color: '#94a3b8',
                             formatter: function (w) {
+                                if (!series.some(s => s > 0)) return 0;
                                 return w.globals.seriesTotals.reduce((a, b) => a + b, 0)
                             }
                         }
@@ -497,7 +502,7 @@ function renderShadowCharts(data) {
     const mlLatencies = latencyTimeline.map(item => item.ml_latency);
     const indices = latencyTimeline.map(item => "#" + item.index);
     
-    const latencyOptions = {
+    const shadowLatencyOptions = {
         series: [
             {
                 name: 'Rules Heuristics',
@@ -509,6 +514,7 @@ function renderShadowCharts(data) {
             }
         ],
         chart: {
+            id: 'shadow-latency-chart',
             type: 'area',
             height: 280,
             background: 'transparent',
@@ -562,9 +568,9 @@ function renderShadowCharts(data) {
     };
     
     if (shadowLatencyChart) {
-        shadowLatencyChart.updateOptions(latencyOptions);
+        shadowLatencyChart.updateOptions(shadowLatencyOptions);
     } else {
-        shadowLatencyChart = new ApexCharts(document.querySelector("#shadowLatencyChart"), latencyOptions);
+        shadowLatencyChart = new ApexCharts(document.querySelector("#shadowLatencyChart"), shadowLatencyOptions);
         shadowLatencyChart.render();
     }
 }
