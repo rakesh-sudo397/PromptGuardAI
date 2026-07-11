@@ -579,7 +579,7 @@ async def auth_signup(payload: AuthRequest):
         logger.error("Signup failed: %s", e)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to register user account."
+            detail=f"Failed to register user account: {str(e)}"
         )
 
 
@@ -614,7 +614,7 @@ async def auth_login(payload: AuthRequest):
         logger.error("Login failed: %s", e)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Authentication failed."
+            detail=f"Authentication failed: {str(e)}"
         )
 
 
