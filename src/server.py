@@ -214,6 +214,7 @@ def init_db():
             try:
                 cursor.execute("SELECT client_ip FROM scans LIMIT 1")
             except Exception:
+                conn.rollback()
                 logger.info("Database migration: adding client_ip column to scans table.")
                 cursor.execute("ALTER TABLE scans ADD COLUMN client_ip VARCHAR(50) DEFAULT 'unknown'")
                 conn.commit()
@@ -222,6 +223,7 @@ def init_db():
             try:
                 cursor.execute("SELECT user_id FROM scans LIMIT 1")
             except Exception:
+                conn.rollback()
                 logger.info("Database migration: adding user_id column to scans table.")
                 cursor.execute("ALTER TABLE scans ADD COLUMN user_id INTEGER DEFAULT NULL")
                 conn.commit()
@@ -230,6 +232,7 @@ def init_db():
             try:
                 cursor.execute("SELECT role FROM users LIMIT 1")
             except Exception:
+                conn.rollback()
                 logger.info("Database migration: adding role column to users table.")
                 cursor.execute("ALTER TABLE users ADD COLUMN role VARCHAR(20) DEFAULT 'user'")
                 conn.commit()
