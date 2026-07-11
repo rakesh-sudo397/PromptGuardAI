@@ -178,12 +178,12 @@ def auto_scrub_payloads(text: str) -> str:
     
     # Common attack signatures to clean/neutralize
     scrub_patterns = [
-        (r'(?i)ignore\s+all\s+(?:previous\s+)?instructions', '[SCRUBBED_INSTRUCTION_OVERRIDE]'),
-        (r'(?i)ignore\s+all\s+rules', '[SCRUBBED_RULE_OVERRIDE]'),
-        (r'(?i)forget\s+(?:everything|what\s+i\s+said|previous\s+rules)', '[SCRUBBED_CONTEXT_WIPE]'),
-        (r'(?i)you\s+are\s+now\s+a\s+simulated\s+system\s+administrator', '[SCRUBBED_SIMULATION]'),
+        (r'(?i)ignore\s+(?:all\s+)?(?:previous\s+)?instructions', '[SCRUBBED_INSTRUCTION_OVERRIDE]'),
+        (r'(?i)ignore\s+(?:all\s+)?rules', '[SCRUBBED_RULE_OVERRIDE]'),
+        (r'(?i)forget\s+(?:everything|what\s+i\s+said|previous\s+rules|instructions)', '[SCRUBBED_CONTEXT_WIPE]'),
+        (r'(?i)you\s+are\s+now\s+a\s+(?:simulated\s+)?system\s+administrator', '[SCRUBBED_SIMULATION]'),
         (r'(?i)you\s+are\s+now\s+(?:dan|unrestricted)', '[SCRUBBED_ROLEPLAY]'),
-        (r'(?i)system\s+leakage|reveal\s+secret|output\s+system\s+prompt', '[SCRUBBED_LEAK_ATTEMPT]')
+        (r'(?i)system\s+leakage|reveal\s+secret|output\s+system\s+prompt|tell\s+me\s+(?:your\s+)?system\s+prompt', '[SCRUBBED_LEAK_ATTEMPT]')
     ]
     
     for pattern, repl in scrub_patterns:
