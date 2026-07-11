@@ -1,0 +1,197 @@
+{% extends "base.html" %}
+
+{% block title %}PromptGuard AI - Admin Console{% endblock %}
+
+{% block extra_head %}
+<style>
+    .admin-grid {
+        display: grid;
+        grid-template-columns: 1fr;
+        gap: 2rem;
+        margin-bottom: 3rem;
+    }
+    table {
+        width: 100%;
+        border-collapse: collapse;
+        margin-top: 1.5rem;
+    }
+    th, td {
+        text-align: left;
+        padding: 1rem;
+        border-bottom: 1px solid var(--border-color);
+    }
+    th {
+        color: var(--text-secondary);
+        font-weight: bold;
+        font-size: 0.85rem;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+    }
+    td {
+        color: var(--text-primary);
+    }
+    .user-badge {
+        font-size: 0.75rem;
+        padding: 4px 8px;
+        border-radius: 6px;
+        font-weight: bold;
+        text-transform: uppercase;
+        display: inline-block;
+    }
+    .badge-admin {
+        background: rgba(99, 102, 241, 0.2);
+        border: 1px solid #6366f1;
+        color: #818cf8;
+    }
+    .badge-user {
+        background: rgba(255, 255, 255, 0.05);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        color: var(--text-secondary);
+    }
+    .action-btn {
+        padding: 6px 12px;
+        font-size: 0.8rem;
+        border-radius: 6px;
+        cursor: pointer;
+        font-weight: bold;
+        transition: all 0.2s ease;
+    }
+    .btn-promote {
+        background: rgba(16, 185, 129, 0.1);
+        border: 1px solid #10b981;
+        color: #10b981;
+    }
+    .btn-promote:hover {
+        background: rgba(16, 185, 129, 0.2);
+    }
+    .btn-demote {
+        background: rgba(239, 68, 68, 0.1);
+        border: 1px solid #ef4444;
+        color: #f87171;
+    }
+    .btn-demote:hover {
+        background: rgba(239, 68, 68, 0.2);
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<h1>System Administration Panel</h1>
+<p style="color: var(--text-secondary); margin-top: -0.5rem; margin-bottom: 3rem;">View system-wide developers, audit their usage, and configure database access rules.</p>
+
+<div class="admin-grid">
+    <!-- User Directory Management Card -->
+    <div class="card">
+        <h2 style="margin-top: 0; display: flex; justify-content: space-between; align-items: center;">
+            <span>Developer Account Directory</span>
+            <button class="btn-primary" style="padding: 8px 14px; font-size: 0.85rem;" onclick="loadUsers()">Refresh Directory</button>
+        </h2>
+        <p style="color: var(--text-secondary); margin-top: -0.5rem; margin-bottom: 1.5rem; font-size: 0.9rem;">
+            List of all registered developers. You can promote standard users to administrator or demote administrators back to standard access.
+        </p>
+
+        <div style="overflow-x: auto;">
+            <table>
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>Username / Email</th>
+                        <th>Role</th>
+                        <th>Created At</th>
+                        <th style="text-align: center;">Active Keys</th>
+                        <th style="text-align: center;">Total Scans</th>
+                        <th style="text-align: right;">Actions</th>
+                    </tr>
+                </thead>
+                <tbody id="users-table-body">
+                    <tr>
+                        <td colspan="7" style="text-align: center; color: var(--text-secondary); padding: 2rem;">Loading developers list...</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<script>
+    document.getElementById('nav-admin').classList.add('active');
+
+    async function loadUsers() {
+        const tbody = document.getElementById('users-table-body');
+        try {
+            const res = await fetch('/api/v1/admin/users');
+            if (!res.ok) throw new Error('Failed to fetch user directory.');
+            const users = await res.json();
+            
+            if (users.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="7" style="text-align: center; color: var(--text-secondary); padding: 2rem;">No registered developers found.</td></tr>`;
+                return;
+            }
+
+            tbody.innerHTML = '';
+            users.forEach(user => {
+                const tr = document.createElement('tr');
+                
+                // Format Created At
+                let dateStr = user.created_at;
+                try {
+                    const d = new Date(user.created_at);
+                    dateStr = d.toLocaleDateString() + ' ' + d.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+                } catch(e) {}
+
+                const roleBadge = user.role === 'admin' 
+                    ? `<span class="user-badge badge-admin">Admin</span>` 
+                    : `<span class="user-badge badge-user">User</span>`;
+
+                let actionHtml = '';
+                if (user.username === 'rakeshnpvrt@gmail.com') {
+                    actionHtml = `<span style="font-size: 0.8rem; color: var(--text-secondary); font-style: italic;">Primary Owner</span>`;
+                } else if (user.role === 'admin') {
+                    actionHtml = `<button class="action-btn btn-demote" onclick="updateRole(${user.id}, 'user')">Demote to User</button>`;
+                } else {
+                    actionHtml = `<button class="action-btn btn-promote" onclick="updateRole(${user.id}, 'admin')">Promote to Admin</button>`;
+                }
+
+                tr.innerHTML = `
+                    <td>${user.id}</td>
+                    <td style="font-weight: bold;">${user.username}</td>
+                    <td>${roleBadge}</td>
+                    <td style="color: var(--text-secondary); font-size: 0.9rem;">${dateStr}</td>
+                    <td style="text-align: center; font-weight: bold;">${user.active_keys}</td>
+                    <td style="text-align: center; font-weight: bold; color: #818cf8;">${user.total_scans}</td>
+                    <td style="text-align: right;">${actionHtml}</td>
+                `;
+                tbody.appendChild(tr);
+            });
+        } catch (err) {
+            console.error(err);
+            tbody.innerHTML = `<tr><td colspan="7" style="text-align: center; color: #f43f5e; padding: 2rem;">Error loading directory: ${err.message}</td></tr>`;
+        }
+    }
+
+    async function updateRole(userId, newRole) {
+        if (!confirm(`Are you sure you want to change this user's role to ${newRole}?`)) {
+            return;
+        }
+        try {
+            const res = await fetch(`/api/v1/admin/users/${userId}/role`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ role: newRole })
+            });
+            if (!res.ok) {
+                const data = await res.json();
+                throw new Error(data.detail || 'Failed to update role.');
+            }
+            loadUsers();
+        } catch (err) {
+            alert(`Error: ${err.message}`);
+        }
+    }
+
+    // Initial load
+    document.addEventListener('DOMContentLoaded', loadUsers);
+</script>
+{% endblock %}

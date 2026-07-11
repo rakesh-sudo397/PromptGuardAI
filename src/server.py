@@ -209,6 +209,30 @@ def init_db():
                 )
             """)
             conn.commit()
+            
+            # Migration: check if client_ip column exists, if not add it
+            try:
+                cursor.execute("SELECT client_ip FROM scans LIMIT 1")
+            except Exception:
+                logger.info("Database migration: adding client_ip column to scans table.")
+                cursor.execute("ALTER TABLE scans ADD COLUMN client_ip VARCHAR(50) DEFAULT 'unknown'")
+                conn.commit()
+                
+            # Migration: check if user_id column exists, if not add it
+            try:
+                cursor.execute("SELECT user_id FROM scans LIMIT 1")
+            except Exception:
+                logger.info("Database migration: adding user_id column to scans table.")
+                cursor.execute("ALTER TABLE scans ADD COLUMN user_id INTEGER DEFAULT NULL")
+                conn.commit()
+
+            # Migration: check if role column exists in users, if not add it
+            try:
+                cursor.execute("SELECT role FROM users LIMIT 1")
+            except Exception:
+                logger.info("Database migration: adding role column to users table.")
+                cursor.execute("ALTER TABLE users ADD COLUMN role VARCHAR(20) DEFAULT 'user'")
+                conn.commit()
         else:
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS scans (
@@ -219,7 +243,8 @@ def init_db():
                     risk_score REAL NOT NULL,
                     is_blocked INTEGER NOT NULL,
                     category TEXT NOT NULL,
-                    latency_ms REAL NOT NULL
+                    latency_ms REAL NOT NULL,
+                    user_id INTEGER DEFAULT NULL
                 )
             """)
             cursor.execute("""
@@ -227,6 +252,7 @@ def init_db():
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     username TEXT NOT NULL UNIQUE,
                     password_hash TEXT NOT NULL,
+                    role TEXT DEFAULT 'user',
                     created_at TEXT NOT NULL
                 )
             """)
@@ -260,6 +286,14 @@ def init_db():
                 cursor.execute("ALTER TABLE scans ADD COLUMN user_id INTEGER DEFAULT NULL")
                 conn.commit()
 
+            # Migration: check if role column exists in users, if not add it
+            cursor.execute("PRAGMA table_info(users)")
+            columns = [col[1] for col in cursor.fetchall()]
+            if 'role' not in columns:
+                logger.info("Database migration: adding role column to users table.")
+                cursor.execute("ALTER TABLE users ADD COLUMN role TEXT DEFAULT 'user'")
+                conn.commit()
+
         # Seed default developer credentials
         from src.core.auth import hash_password
         dev_username = "rakeshnpvrt@gmail.com"
@@ -276,7 +310,7 @@ def init_db():
         if not row:
             if is_postgres:
                 cursor.execute(
-                    "INSERT INTO users (username, password_hash, created_at) VALUES (%s, %s, %s) RETURNING id",
+                    "INSERT INTO users (username, password_hash, role, created_at) VALUES (%s, %s, 'admin', %s) RETURNING id",
                     (dev_username, dev_password_hash, created_at)
                 )
                 user_id = cursor.fetchone()[0]
@@ -286,7 +320,7 @@ def init_db():
                 )
             else:
                 cursor.execute(
-                    "INSERT INTO users (username, password_hash, created_at) VALUES (?, ?, ?)",
+                    "INSERT INTO users (username, password_hash, role, created_at) VALUES (?, ?, 'admin', ?)",
                     (dev_username, dev_password_hash, created_at)
                 )
                 user_id = cursor.lastrowid
@@ -300,7 +334,7 @@ def init_db():
             user_id = row["id"]
             if is_postgres:
                 cursor.execute(
-                    "UPDATE users SET password_hash = %s WHERE id = %s",
+                    "UPDATE users SET password_hash = %s, role = 'admin' WHERE id = %s",
                     (dev_password_hash, user_id)
                 )
                 cursor.execute("SELECT id FROM api_keys WHERE key_value = %s", ("pg_live_key_98213",))
@@ -311,7 +345,7 @@ def init_db():
                     )
             else:
                 cursor.execute(
-                    "UPDATE users SET password_hash = ? WHERE id = ?",
+                    "UPDATE users SET password_hash = ?, role = 'admin' WHERE id = ?",
                     (dev_password_hash, user_id)
                 )
                 cursor.execute("SELECT id FROM api_keys WHERE key_value = ?", ("pg_live_key_98213",))
@@ -407,8 +441,8 @@ async def rate_limiting_middleware(request: Request, call_next):
     client_ip = request.client.host
     now = time.time()
     
-    # 1. Authenticate Request (API Key or Browser Cookie)
     user_id = None
+    role = "user"
     limit = 10  # Default free tier limit
     
     api_key = request.headers.get("x-api-key")
@@ -416,17 +450,25 @@ async def rate_limiting_middleware(request: Request, call_next):
         if api_key == "pg_live_key_98213":
             # Legacy support
             limit = 100
+            user_id = 1
+            role = "admin"
         else:
             with get_db_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute(
-                    "SELECT user_id, rate_limit_per_window FROM api_keys WHERE key_value = %s AND is_active = 1",
+                    """
+                    SELECT k.user_id, k.rate_limit_per_window, u.role
+                    FROM api_keys k
+                    JOIN users u ON k.user_id = u.id
+                    WHERE k.key_value = %s AND k.is_active = 1
+                    """,
                     (api_key,)
                 )
                 row = cursor.fetchone()
                 if row:
                     user_id = row["user_id"]
                     limit = row["rate_limit_per_window"]
+                    role = row["role"]
                 else:
                     return JSONResponse(
                         status_code=status.HTTP_401_UNAUTHORIZED,
@@ -440,11 +482,12 @@ async def rate_limiting_middleware(request: Request, call_next):
             decoded_token = urllib.parse.unquote(session_token)
             with get_db_connection() as conn:
                 cursor = conn.cursor()
-                cursor.execute("SELECT id FROM users WHERE username = %s", (decoded_token,))
+                cursor.execute("SELECT id, role FROM users WHERE username = %s", (decoded_token,))
                 row = cursor.fetchone()
                 if row:
                     user_id = row["id"]
                     limit = 200 # Higher limit for dashboard session
+                    role = row["role"]
                 else:
                     return JSONResponse(
                         status_code=status.HTTP_401_UNAUTHORIZED,
@@ -456,8 +499,9 @@ async def rate_limiting_middleware(request: Request, call_next):
                 content={"detail": "Authentication required. Supply X-API-Key header or session cookie."}
             )
             
-    # Store user_id or api_key in request state so endpoint can associate scan transaction
+    # Store user_id and role in request state
     request.state.user_id = user_id
+    request.state.role = role
         
     if client_ip not in RATE_LIMIT_RECORD:
         RATE_LIMIT_RECORD[client_ip] = []
@@ -536,16 +580,7 @@ async def auth_signup(payload: AuthRequest):
         with get_db_connection() as conn:
             cursor = conn.cursor()
             
-            # Restrict to a single developer account (only 1 row allowed in users table)
-            cursor.execute("SELECT COUNT(*) as count FROM users")
-            row = cursor.fetchone()
-            if row and row["count"] >= 1:
-                raise HTTPException(
-                    status_code=status.HTTP_403_FORBIDDEN,
-                    detail="Registration is closed. A developer account is already registered."
-                )
-                
-            # Check if user already exists (safety backup)
+            # Check if user already exists
             cursor.execute("SELECT id FROM users WHERE username = %s", (username,))
             if cursor.fetchone():
                 raise HTTPException(
@@ -558,7 +593,7 @@ async def auth_signup(payload: AuthRequest):
             created_at = datetime.datetime.now(datetime.timezone.utc).isoformat()
             
             cursor.execute(
-                "INSERT INTO users (username, password_hash, created_at) VALUES (%s, %s, %s) RETURNING id",
+                "INSERT INTO users (username, password_hash, role, created_at) VALUES (%s, %s, 'user', %s) RETURNING id",
                 (username, pwd_hash, created_at)
             )
             user_id = cursor.fetchone()[0]
@@ -714,18 +749,23 @@ async def delete_api_key(key_id: int, request: Request):
 # PAGE ROUTING
 # ==========================================
 
-def is_session_valid(session_token: str) -> bool:
+def get_user_from_session(session_token: str):
     if not session_token:
-        return False
+        return None
     try:
         import urllib.parse
         decoded_token = urllib.parse.unquote(session_token)
         with get_db_connection() as conn:
             cursor = conn.cursor()
-            cursor.execute("SELECT id FROM users WHERE username = %s", (decoded_token,))
-            return cursor.fetchone() is not None
+            cursor.execute("SELECT id, username, role FROM users WHERE username = %s", (decoded_token,))
+            row = cursor.fetchone()
+            return row
     except Exception:
-        return False
+        return None
+
+
+def is_session_valid(session_token: str) -> bool:
+    return get_user_from_session(session_token) is not None
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -751,21 +791,46 @@ async def serve_auth(request: Request):
 @app.get("/sandbox", response_class=HTMLResponse)
 async def serve_sandbox(request: Request):
     session_token = request.cookies.get("session_token")
-    if not is_session_valid(session_token):
+    user = get_user_from_session(session_token)
+    if not user:
         response = RedirectResponse(url="/auth")
         response.delete_cookie("session_token")
         return response
-    return templates.TemplateResponse(request=request, name="sandbox.html")
+    return templates.TemplateResponse(
+        request=request,
+        name="sandbox.html",
+        context={"username": user["username"], "role": user["role"]}
+    )
 
 
 @app.get("/dashboard", response_class=HTMLResponse)
 async def serve_dashboard(request: Request):
     session_token = request.cookies.get("session_token")
-    if not is_session_valid(session_token):
+    user = get_user_from_session(session_token)
+    if not user:
         response = RedirectResponse(url="/auth")
         response.delete_cookie("session_token")
         return response
-    return templates.TemplateResponse(request=request, name="dashboard.html")
+    return templates.TemplateResponse(
+        request=request,
+        name="dashboard.html",
+        context={"username": user["username"], "role": user["role"]}
+    )
+
+
+@app.get("/admin", response_class=HTMLResponse)
+async def serve_admin(request: Request):
+    session_token = request.cookies.get("session_token")
+    user = get_user_from_session(session_token)
+    if not user or user["role"] != "admin":
+        response = RedirectResponse(url="/auth")
+        response.delete_cookie("session_token")
+        return response
+    return templates.TemplateResponse(
+        request=request,
+        name="admin.html",
+        context={"username": user["username"], "role": user["role"]}
+    )
 
 
 @app.get("/logout")
@@ -1137,6 +1202,18 @@ async def get_metrics(request: Request):
     Computes statistical telemetry aggregations from the audits table.
     """
     user_id = getattr(request.state, "user_id", None)
+    role = getattr(request.state, "role", "user")
+    
+    target = request.query_params.get("target_user_id")
+    if role == "admin" and target is not None:
+        if target in ("all", ""):
+            user_id = None
+        else:
+            try:
+                user_id = int(target)
+            except ValueError:
+                pass
+
     try:
         with get_db_connection() as conn:
             cursor = conn.cursor()
@@ -1148,7 +1225,7 @@ async def get_metrics(request: Request):
                     AVG(risk_score) as average_risk,
                     AVG(latency_ms) as average_latency
                 FROM scans
-                WHERE user_id = %s OR (%s IS NULL AND user_id IS NULL)
+                WHERE %s IS NULL OR user_id = %s
             """, (user_id, user_id))
             summary_row = cursor.fetchone()
             
@@ -1160,7 +1237,7 @@ async def get_metrics(request: Request):
             cursor.execute("""
                 SELECT category, COUNT(*) as count
                 FROM scans
-                WHERE user_id = %s OR (%s IS NULL AND user_id IS NULL)
+                WHERE %s IS NULL OR user_id = %s
                 GROUP BY category
             """, (user_id, user_id))
             distribution_rows = cursor.fetchall()
@@ -1190,13 +1267,25 @@ async def get_recent_logs(request: Request):
     Retrieves the last 10 scan log entries.
     """
     user_id = getattr(request.state, "user_id", None)
+    role = getattr(request.state, "role", "user")
+    
+    target = request.query_params.get("target_user_id")
+    if role == "admin" and target is not None:
+        if target in ("all", ""):
+            user_id = None
+        else:
+            try:
+                user_id = int(target)
+            except ValueError:
+                pass
+
     try:
         with get_db_connection() as conn:
             cursor = conn.cursor()
             cursor.execute("""
                 SELECT timestamp, client_ip, prompt_text, risk_score, is_blocked, category, latency_ms
                 FROM scans
-                WHERE user_id = %s OR (%s IS NULL AND user_id IS NULL)
+                WHERE %s IS NULL OR user_id = %s
                 ORDER BY id DESC
                 LIMIT 10
             """, (user_id, user_id))
@@ -1306,12 +1395,24 @@ async def get_shadow_analytics(request: Request):
     (agreement rates, latency splits, threat distributions).
     """
     user_id = getattr(request.state, "user_id", None)
+    role = getattr(request.state, "role", "user")
+    
+    target = request.query_params.get("target_user_id")
+    if role == "admin" and target is not None:
+        if target in ("all", ""):
+            user_id = None
+        else:
+            try:
+                user_id = int(target)
+            except ValueError:
+                pass
+
     try:
         with get_db_connection() as conn:
             cursor = conn.cursor()
             cursor.execute("""
                 SELECT prompt_text, latency_ms FROM scans
-                WHERE user_id = %s OR (%s IS NULL AND user_id IS NULL)
+                WHERE %s IS NULL OR user_id = %s
                 ORDER BY id DESC
                 LIMIT 30
             """, (user_id, user_id))
@@ -1395,6 +1496,74 @@ async def get_shadow_analytics(request: Request):
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Error compiling shadow mode analytics."
         )
+
+
+# ==========================================
+# ADMIN ENDPOINTS
+# ==========================================
+
+class UpdateRoleRequest(BaseModel):
+    role: str = Field(..., min_length=4, max_length=20)
+
+
+@app.get("/api/v1/admin/users")
+async def get_admin_users(request: Request):
+    user_role = getattr(request.state, "role", "user")
+    if user_role != "admin":
+        raise HTTPException(status_code=403, detail="Forbidden: Admin access required.")
+        
+    try:
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT 
+                    u.id, 
+                    u.username, 
+                    u.role, 
+                    u.created_at,
+                    COALESCE((SELECT COUNT(*) FROM api_keys k WHERE k.user_id = u.id AND k.is_active = 1), 0) as active_keys,
+                    COALESCE((SELECT COUNT(*) FROM scans s WHERE s.user_id = u.id), 0) as total_scans
+                FROM users u
+                ORDER BY u.id ASC
+            """)
+            rows = cursor.fetchall()
+            users_list = [dict(row) for row in rows]
+            return JSONResponse(content=users_list, status_code=status.HTTP_200_OK)
+    except Exception as e:
+        logger.error("Admin user list retrieval failed: %s", e)
+        raise HTTPException(status_code=500, detail="Database retrieval error.")
+
+
+@app.post("/api/v1/admin/users/{target_user_id}/role")
+async def update_user_role(target_user_id: int, payload: UpdateRoleRequest, request: Request):
+    user_role = getattr(request.state, "role", "user")
+    if user_role != "admin":
+        raise HTTPException(status_code=403, detail="Forbidden: Admin access required.")
+        
+    new_role = payload.role.strip().lower()
+    if new_role not in ("admin", "user"):
+        raise HTTPException(status_code=400, detail="Invalid role. Must be 'admin' or 'user'.")
+        
+    try:
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            # Verify target user exists
+            cursor.execute("SELECT id, username FROM users WHERE id = %s", (target_user_id,))
+            user = cursor.fetchone()
+            if not user:
+                raise HTTPException(status_code=404, detail="User not found.")
+                
+            # Update role
+            cursor.execute("UPDATE users SET role = %s WHERE id = %s", (new_role, target_user_id))
+            conn.commit()
+            
+        logger.info("Admin updated role for user %s (id=%d) to %s", user["username"], target_user_id, new_role)
+        return JSONResponse(content={"message": f"User role updated to {new_role} successfully."}, status_code=status.HTTP_200_OK)
+    except HTTPException as he:
+        raise he
+    except Exception as e:
+        logger.error("Failed to update user role: %s", e)
+        raise HTTPException(status_code=500, detail="Database write error.")
 
 
 # Allow running the script directly via python src/server.py

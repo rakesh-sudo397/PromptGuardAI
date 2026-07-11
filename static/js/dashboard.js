@@ -2,6 +2,37 @@ let threatChart = null;
 let latencyChart = null;
 let shadowSplitChart = null;
 let shadowLatencyChart = null;
+let activeUserFilter = 'all';
+
+function changeUserFilter(val) {
+    activeUserFilter = val;
+    fetchSystemStats();
+    fetchShadowStats();
+}
+
+async function populateAdminFilter() {
+    const filter = document.getElementById('admin-user-filter');
+    if (!filter) return;
+    try {
+        const res = await fetch('/api/v1/admin/users');
+        if (!res.ok) return;
+        const users = await res.json();
+        
+        // Clear all except the first option
+        while (filter.options.length > 1) {
+            filter.remove(1);
+        }
+        
+        users.forEach(user => {
+            const opt = document.createElement('option');
+            opt.value = user.id;
+            opt.innerText = `👤 ${user.username} (ID: ${user.id})`;
+            filter.appendChild(opt);
+        });
+    } catch (e) {
+        console.error("Failed to populate admin users list:", e);
+    }
+}
 
 function getCurrentUser() {
     const name = "session_token=";
@@ -25,7 +56,7 @@ async function fetchSystemStats() {
         const username = getCurrentUser();
         
         // 1. Fetch telemetry metrics
-        const resMetrics = await fetch('/api/v1/metrics');
+        const resMetrics = await fetch('/api/v1/metrics?target_user_id=' + activeUserFilter);
         if (!resMetrics.ok) {
             if (resMetrics.status === 401) {
                 window.location.href = '/logout';
@@ -68,7 +99,7 @@ async function fetchSystemStats() {
         }
 
         // 3. Fetch Recent Audit Logs
-        const resLogs = await fetch('/api/v1/logs');
+        const resLogs = await fetch('/api/v1/logs?target_user_id=' + activeUserFilter);
         if (!resLogs.ok) {
             if (resLogs.status === 401) {
                 window.location.href = '/logout';
@@ -453,7 +484,7 @@ async function fetchShadowStats() {
     try {
         const username = getCurrentUser();
         
-        const res = await fetch('/api/v1/shadow_analytics');
+        const res = await fetch('/api/v1/shadow_analytics?target_user_id=' + activeUserFilter);
         if (!res.ok) {
             if (res.status === 401) {
                 window.location.href = '/logout';
@@ -737,6 +768,7 @@ function copyNewKeyToClipboard() {
 
 // Initial stats fetching and configuration load
 document.addEventListener('DOMContentLoaded', () => {
+    populateAdminFilter();
     fetchSystemStats();
     fetchShadowStats();
     loadCalibrationConfig();

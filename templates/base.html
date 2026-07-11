@@ -11,11 +11,25 @@
     <div class="container">
         <!-- Navigation Tabs -->
         <div class="tabs" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2rem;">
-            <div>
+            <div style="display: flex; align-items: center; gap: 15px;">
                 <a href="/sandbox" id="nav-sandbox" class="tab-btn">Sandbox Console</a>
                 <a href="/dashboard" id="nav-dashboard" class="tab-btn">Analytics Dashboard</a>
+                {% if role == 'admin' %}
+                <a href="/admin" id="nav-admin" class="tab-btn" style="border-color: rgba(99, 102, 241, 0.4); color: #818cf8;">Admin Console</a>
+                {% endif %}
             </div>
-            <a href="/logout" class="tab-btn" style="border: 1px solid rgba(239, 68, 68, 0.2); background: rgba(239, 68, 68, 0.05); color: #f87171; border-radius: 8px; padding: 0.5rem 1rem;">Sign Out</a>
+            <div style="display: flex; align-items: center; gap: 15px;">
+                <div style="text-align: right; font-size: 0.85rem;">
+                    <span style="color: var(--text-secondary);">Logged in as:</span>
+                    <strong style="color: #fff; display: block;">{{ username }} 
+                        <span style="font-size: 0.7rem; padding: 2px 6px; border-radius: 4px; margin-left: 5px; font-weight: bold; text-transform: uppercase;
+                            {% if role == 'admin' %} background: rgba(99, 102, 241, 0.2); border: 1px solid #6366f1; color: #818cf8; {% else %} background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); color: var(--text-secondary); {% endif %}">
+                            {{ role }}
+                        </span>
+                    </strong>
+                </div>
+                <a href="/logout" class="tab-btn" style="border: 1px solid rgba(239, 68, 68, 0.2); background: rgba(239, 68, 68, 0.05); color: #f87171; border-radius: 8px; padding: 0.5rem 1rem;">Sign Out</a>
+            </div>
         </div>
         
         <!-- Page Body Content -->
