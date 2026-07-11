@@ -350,12 +350,10 @@ def get_db_connection():
     db_url = os.environ.get("SUPABASE_DATABASE_URL")
     if db_url and psycopg2 is not None:
         conn = psycopg2.connect(db_url)
-        # Use DictCursor so row results behave like dicts (compatible with sqlite3.Row)
-        cursor = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
+        conn.cursor_factory = psycopg2.extras.DictCursor
         try:
             yield conn
         finally:
-            cursor.close()
             conn.close()
     else:
         raw_conn = sqlite3.connect(DB_PATH)
