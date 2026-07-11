@@ -671,43 +671,288 @@ class ChangePasswordRequest(BaseModel):
     new_password: str = Field(..., min_length=8, max_length=100)
 
 
-@app.get("/api/v1/auth/oauth/{provider}")
-async def oauth_login_simulation(provider: str):
-    provider = provider.strip().lower()
-    if provider not in ("google", "github"):
-        raise HTTPException(status_code=400, detail="Unsupported OAuth provider.")
+@app.get("/api/v1/auth/oauth/google")
+async def oauth_google_redirect(request: Request):
+    client_id = os.environ.get("GOOGLE_CLIENT_ID")
+    client_secret = os.environ.get("GOOGLE_CLIENT_SECRET")
+    redirect_base = os.environ.get("OAUTH_REDIRECT_URI_BASE")
+    
+    if not client_id or not client_secret or not redirect_base:
+        return HTMLResponse(
+            content=f"""
+            <html>
+            <head>
+                <title>Configuration Required</title>
+                <style>
+                    body {{ background: #05060f; color: #f8fafc; font-family: sans-serif; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; }}
+                    .card {{ background: rgba(30, 27, 46, 0.45); border: 1px solid rgba(255, 255, 255, 0.08); padding: 40px; border-radius: 16px; max-width: 500px; text-align: center; box-shadow: 0 8px 32px rgba(0,0,0,0.5); }}
+                    h1 {{ color: #818cf8; margin-top: 0; }}
+                    p {{ color: #94a3b8; line-height: 1.6; font-size: 0.95rem; }}
+                    code {{ background: rgba(255,255,255,0.05); padding: 4px 8px; border-radius: 4px; color: #fff; font-family: monospace; }}
+                </style>
+            </head>
+            <body>
+                <div class="card">
+                    <h1>Google OAuth Configuration Required</h1>
+                    <p>To use Google authentication, you must configure the following environment variables on Vercel:</p>
+                    <p><code>GOOGLE_CLIENT_ID</code><br><code>GOOGLE_CLIENT_SECRET</code><br><code>OAUTH_REDIRECT_URI_BASE</code> (e.g. <code>https://your-domain.vercel.app</code>)</p>
+                    <p>Once set, redeploy or restart the application to apply the settings.</p>
+                </div>
+            </body>
+            </html>
+            """,
+            status_code=500
+        )
         
-    mock_email = f"oauth_{provider}_dev@promptguard.ai"
+    redirect_uri = f"{redirect_base.rstrip('/')}/api/v1/auth/oauth/google/callback"
+    params = {
+        "client_id": client_id,
+        "redirect_uri": redirect_uri,
+        "response_type": "code",
+        "scope": "openid email profile",
+        "access_type": "online",
+        "prompt": "select_account"
+    }
+    url = "https://accounts.google.com/o/oauth2/v2/auth?" + urllib.parse.urlencode(params)
+    return RedirectResponse(url)
+
+
+@app.get("/api/v1/auth/oauth/github")
+async def oauth_github_redirect(request: Request):
+    client_id = os.environ.get("GITHUB_CLIENT_ID")
+    client_secret = os.environ.get("GITHUB_CLIENT_SECRET")
+    redirect_base = os.environ.get("OAUTH_REDIRECT_URI_BASE")
+    
+    if not client_id or not client_secret or not redirect_base:
+        return HTMLResponse(
+            content=f"""
+            <html>
+            <head>
+                <title>Configuration Required</title>
+                <style>
+                    body {{ background: #05060f; color: #f8fafc; font-family: sans-serif; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; }}
+                    .card {{ background: rgba(30, 27, 46, 0.45); border: 1px solid rgba(255, 255, 255, 0.08); padding: 40px; border-radius: 16px; max-width: 500px; text-align: center; box-shadow: 0 8px 32px rgba(0,0,0,0.5); }}
+                    h1 {{ color: #818cf8; margin-top: 0; }}
+                    p {{ color: #94a3b8; line-height: 1.6; font-size: 0.95rem; }}
+                    code {{ background: rgba(255,255,255,0.05); padding: 4px 8px; border-radius: 4px; color: #fff; font-family: monospace; }}
+                </style>
+            </head>
+            <body>
+                <div class="card">
+                    <h1>GitHub OAuth Configuration Required</h1>
+                    <p>To use GitHub authentication, you must configure the following environment variables on Vercel:</p>
+                    <p><code>GITHUB_CLIENT_ID</code><br><code>GITHUB_CLIENT_SECRET</code><br><code>OAUTH_REDIRECT_URI_BASE</code> (e.g. <code>https://your-domain.vercel.app</code>)</p>
+                    <p>Once set, redeploy or restart the application to apply the settings.</p>
+                </div>
+            </body>
+            </html>
+            """,
+            status_code=500
+        )
+        
+    redirect_uri = f"{redirect_base.rstrip('/')}/api/v1/auth/oauth/github/callback"
+    params = {
+        "client_id": client_id,
+        "redirect_uri": redirect_uri,
+        "scope": "user:email"
+    }
+    url = "https://github.com/login/oauth/authorize?" + urllib.parse.urlencode(params)
+    return RedirectResponse(url)
+
+
+@app.get("/api/v1/auth/oauth/google/callback")
+async def oauth_google_callback(code: str = None, error: str = None):
+    if error:
+        raise HTTPException(status_code=400, detail=f"Google OAuth Error: {error}")
+    if not code:
+        raise HTTPException(status_code=400, detail="Missing authorization code.")
+        
+    client_id = os.environ.get("GOOGLE_CLIENT_ID")
+    client_secret = os.environ.get("GOOGLE_CLIENT_SECRET")
+    redirect_base = os.environ.get("OAUTH_REDIRECT_URI_BASE")
+    
+    if not client_id or not client_secret or not redirect_base:
+        raise HTTPException(status_code=500, detail="Google OAuth not configured.")
+        
+    redirect_uri = f"{redirect_base.rstrip('/')}/api/v1/auth/oauth/google/callback"
+    
+    import urllib.request
+    import json
+    
+    token_url = "https://oauth2.googleapis.com/token"
+    data = urllib.parse.urlencode({
+        "client_id": client_id,
+        "client_secret": client_secret,
+        "code": code,
+        "grant_type": "authorization_code",
+        "redirect_uri": redirect_uri
+    }).encode("utf-8")
+    
+    req = urllib.request.Request(
+        token_url,
+        data=data,
+        headers={"Content-Type": "application/x-www-form-urlencoded"}
+    )
+    
+    try:
+        with urllib.request.urlopen(req) as resp:
+            token_data = json.loads(resp.read().decode("utf-8"))
+            access_token = token_data.get("access_token")
+    except Exception as e:
+        logger.error("Failed to exchange Google OAuth code: %s", e)
+        raise HTTPException(status_code=500, detail="Failed to exchange authorization token.")
+        
+    userinfo_url = "https://www.googleapis.com/oauth2/v3/userinfo"
+    userinfo_req = urllib.request.Request(
+        userinfo_url,
+        headers={"Authorization": f"Bearer {access_token}"}
+    )
+    
+    try:
+        with urllib.request.urlopen(userinfo_req) as resp:
+            profile = json.loads(resp.read().decode("utf-8"))
+            email = profile.get("email")
+    except Exception as e:
+        logger.error("Failed to fetch Google userinfo: %s", e)
+        raise HTTPException(status_code=500, detail="Failed to fetch Google user info.")
+        
+    if not email:
+        raise HTTPException(status_code=400, detail="Google OAuth did not return a valid email address.")
+        
+    return await handle_oauth_user_session(email, "google")
+
+
+@app.get("/api/v1/auth/oauth/github/callback")
+async def oauth_github_callback(code: str = None, error: str = None):
+    if error:
+        raise HTTPException(status_code=400, detail=f"GitHub OAuth Error: {error}")
+    if not code:
+        raise HTTPException(status_code=400, detail="Missing authorization code.")
+        
+    client_id = os.environ.get("GITHUB_CLIENT_ID")
+    client_secret = os.environ.get("GITHUB_CLIENT_SECRET")
+    redirect_base = os.environ.get("OAUTH_REDIRECT_URI_BASE")
+    
+    if not client_id or not client_secret or not redirect_base:
+        raise HTTPException(status_code=500, detail="GitHub OAuth not configured.")
+        
+    redirect_uri = f"{redirect_base.rstrip('/')}/api/v1/auth/oauth/github/callback"
+    
+    import urllib.request
+    import json
+    
+    token_url = "https://github.com/login/oauth/access_token"
+    data = urllib.parse.urlencode({
+        "client_id": client_id,
+        "client_secret": client_secret,
+        "code": code,
+        "redirect_uri": redirect_uri
+    }).encode("utf-8")
+    
+    req = urllib.request.Request(
+        token_url,
+        data=data,
+        headers={
+            "Content-Type": "application/x-www-form-urlencoded",
+            "Accept": "application/json"
+        }
+    )
+    
+    try:
+        with urllib.request.urlopen(req) as resp:
+            token_data = json.loads(resp.read().decode("utf-8"))
+            access_token = token_data.get("access_token")
+    except Exception as e:
+        logger.error("Failed to exchange GitHub OAuth code: %s", e)
+        raise HTTPException(status_code=500, detail="Failed to exchange authorization token.")
+        
+    user_url = "https://api.github.com/user"
+    user_req = urllib.request.Request(
+        user_url,
+        headers={
+            "Authorization": f"Bearer {access_token}",
+            "User-Agent": "PromptGuardAI-App"
+        }
+    )
+    
+    email = None
+    try:
+        with urllib.request.urlopen(user_req) as resp:
+            profile = json.loads(resp.read().decode("utf-8"))
+            email = profile.get("email")
+    except Exception as e:
+        logger.error("Failed to fetch GitHub user details: %s", e)
+        raise HTTPException(status_code=500, detail="Failed to fetch GitHub profile.")
+        
+    if not email:
+        emails_url = "https://api.github.com/user/emails"
+        emails_req = urllib.request.Request(
+            emails_url,
+            headers={
+                "Authorization": f"Bearer {access_token}",
+                "User-Agent": "PromptGuardAI-App"
+            }
+        )
+        try:
+            with urllib.request.urlopen(emails_req) as resp:
+                emails_list = json.loads(resp.read().decode("utf-8"))
+                for email_entry in emails_list:
+                    if email_entry.get("primary") and email_entry.get("verified"):
+                        email = email_entry.get("email")
+                        break
+                if not email and emails_list:
+                    for email_entry in emails_list:
+                        if email_entry.get("verified"):
+                            email = email_entry.get("email")
+                            break
+        except Exception as e:
+            logger.error("Failed to fetch GitHub emails list: %s", e)
+            
+    if not email:
+        raise HTTPException(status_code=400, detail="GitHub did not return a verified email address.")
+        
+    return await handle_oauth_user_session(email, "github")
+
+
+async def handle_oauth_user_session(email: str, provider: str):
+    email = email.strip().lower()
     created_at = datetime.datetime.now(datetime.timezone.utc).isoformat()
     
     try:
         with get_db_connection() as conn:
             cursor = conn.cursor()
             
-            cursor.execute("SELECT id, role FROM users WHERE username = %s", (mock_email,))
+            cursor.execute("SELECT id, role FROM users WHERE username = %s", (email,))
             user = cursor.fetchone()
             
             if not user:
                 from src.core.auth import hash_password
                 dummy_hash = hash_password(os.urandom(16).hex())
-                cursor.execute(
-                    "INSERT INTO users (username, password_hash, role, created_at) VALUES (%s, %s, 'user', %s) RETURNING id",
-                    (mock_email, dummy_hash, created_at)
-                )
-                user_id = cursor.fetchone()[0]
-                role = "user"
+                role = "admin" if email == "rakeshnpvrt@gmail.com" else "user"
                 
                 cursor.execute(
-                    "INSERT INTO api_keys (user_id, key_value, key_name, rate_limit_per_window, is_active, created_at) VALUES (%s, %s, 'OAuth Sim Key', 100, 1, %s)",
+                    "INSERT INTO users (username, password_hash, role, created_at) VALUES (%s, %s, %s, %s) RETURNING id",
+                    (email, dummy_hash, role, created_at)
+                )
+                user_id = cursor.fetchone()[0]
+                
+                cursor.execute(
+                    "INSERT INTO api_keys (user_id, key_value, key_name, rate_limit_per_window, is_active, created_at) VALUES (%s, %s, 'OAuth API Key', 100, 1, %s)",
                     (user_id, f"pg_live_{provider}_{os.urandom(8).hex()}", created_at)
                 )
                 conn.commit()
+                logger.info("Automatically registered new developer via %s OAuth: %s", provider, email)
             else:
                 user_id = user["id"]
                 role = user["role"]
                 
+                if email == "rakeshnpvrt@gmail.com" and role != "admin":
+                    cursor.execute("UPDATE users SET role = 'admin' WHERE id = %s", (user_id,))
+                    conn.commit()
+                    role = "admin"
+                
         import urllib.parse
-        encoded_token = urllib.parse.quote(mock_email)
+        encoded_token = urllib.parse.quote(email)
         
         response = RedirectResponse(url="/sandbox", status_code=status.HTTP_303_SEE_OTHER)
         response.set_cookie(
@@ -720,8 +965,8 @@ async def oauth_login_simulation(provider: str):
         )
         return response
     except Exception as e:
-        logger.error("OAuth authentication failed: %s", e)
-        raise HTTPException(status_code=500, detail="OAuth redirection failed.")
+        logger.error("OAuth user session handling failed: %s", e)
+        raise HTTPException(status_code=500, detail="Database write error during OAuth session registration.")
 
 
 @app.post("/api/v1/auth/reset-password")
