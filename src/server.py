@@ -8,6 +8,11 @@ import os
 import sys
 import time
 import sqlite3
+try:
+    import psycopg2
+    import psycopg2.extras
+except ImportError:
+    psycopg2 = None
 import logging
 import datetime
 import random
@@ -74,108 +79,254 @@ from src.rules import JAILBREAK_RULES
 from src.evaluate import run_evaluation_metrics
 
 
+class PostgresToSQLiteCursor:
+    def __init__(self, cursor):
+        self._cursor = cursor
+        self._mock_returning_val = None
+
+    def execute(self, query, params=None):
+        if params is not None:
+            # Replace PostgreSQL %s placeholder syntax with SQLite ? syntax
+            query = query.replace("%s", "?")
+            
+        upper_query = query.upper()
+        if "RETURNING ID" in upper_query:
+            query = query.replace("RETURNING id", "").replace("RETURNING ID", "")
+            if params is not None:
+                res = self._cursor.execute(query, params)
+            else:
+                res = self._cursor.execute(query)
+            self._mock_returning_val = (self._cursor.lastrowid,)
+            return res
+            
+        self._mock_returning_val = None
+        if params is not None:
+            return self._cursor.execute(query, params)
+        else:
+            return self._cursor.execute(query)
+
+    def executemany(self, query, params_list=None):
+        if params_list is not None:
+            query = query.replace("%s", "?")
+            self._mock_returning_val = None
+            return self._cursor.executemany(query, params_list)
+        else:
+            self._mock_returning_val = None
+            return self._cursor.executemany(query)
+
+    def fetchone(self):
+        if self._mock_returning_val is not None:
+            val = self._mock_returning_val
+            self._mock_returning_val = None
+            return val
+        return self._cursor.fetchone()
+
+    def fetchall(self):
+        self._mock_returning_val = None
+        return self._cursor.fetchall()
+
+    @property
+    def lastrowid(self):
+        return self._cursor.lastrowid
+
+    def __getattr__(self, name):
+        return getattr(self._cursor, name)
+
+
+class PostgresToSQLiteConnection:
+    def __init__(self, conn):
+        self._conn = conn
+
+    def cursor(self):
+        return PostgresToSQLiteCursor(self._conn.cursor())
+
+    def commit(self):
+        return self._conn.commit()
+
+    def rollback(self):
+        return self._conn.rollback()
+
+    def close(self):
+        return self._conn.close()
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.close()
+
+    def __getattr__(self, name):
+        return getattr(self._conn, name)
+
+
 def init_db():
     """
-    Verifies database tables exist inside the data folder.
+    Verifies database tables exist inside the data folder or Supabase Postgres.
     """
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    try:
+    db_url = os.environ.get("SUPABASE_DATABASE_URL")
+    is_postgres = bool(db_url and psycopg2 is not None)
+    
+    if is_postgres:
+        conn = psycopg2.connect(db_url)
+        cursor = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
+    else:
+        conn = sqlite3.connect(DB_PATH)
+        conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS scans (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                timestamp TEXT NOT NULL,
-                client_ip TEXT NOT NULL DEFAULT 'unknown',
-                prompt_text TEXT NOT NULL,
-                risk_score REAL NOT NULL,
-                is_blocked INTEGER NOT NULL,
-                category TEXT NOT NULL,
-                latency_ms REAL NOT NULL
-            )
-        """)
-        
-        # Create users table
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS users (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                username TEXT NOT NULL UNIQUE,
-                password_hash TEXT NOT NULL,
-                created_at TEXT NOT NULL
-            )
-        """)
-        
-        # Create api_keys table
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS api_keys (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                user_id INTEGER NOT NULL,
-                key_value TEXT NOT NULL UNIQUE,
-                key_name TEXT NOT NULL,
-                rate_limit_per_window INTEGER NOT NULL DEFAULT 100,
-                is_active INTEGER NOT NULL DEFAULT 1,
-                created_at TEXT NOT NULL,
-                FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
-            )
-        """)
-        conn.commit()
-        
-        # Migration: check if client_ip column exists, if not add it
-        try:
-            cursor.execute("SELECT client_ip FROM scans LIMIT 1")
-        except sqlite3.OperationalError:
-            logger.info("Database migration: adding client_ip column to scans table.")
-            cursor.execute("ALTER TABLE scans ADD COLUMN client_ip TEXT NOT NULL DEFAULT 'unknown'")
+
+    try:
+        if is_postgres:
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS users (
+                    id SERIAL PRIMARY KEY,
+                    username TEXT NOT NULL UNIQUE,
+                    password_hash TEXT NOT NULL,
+                    created_at TEXT NOT NULL
+                )
+            """)
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS api_keys (
+                    id SERIAL PRIMARY KEY,
+                    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                    key_value TEXT NOT NULL UNIQUE,
+                    key_name TEXT NOT NULL,
+                    rate_limit_per_window INTEGER NOT NULL DEFAULT 100,
+                    is_active INTEGER NOT NULL DEFAULT 1,
+                    created_at TEXT NOT NULL
+                )
+            """)
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS scans (
+                    id SERIAL PRIMARY KEY,
+                    timestamp TEXT NOT NULL,
+                    client_ip TEXT NOT NULL DEFAULT 'unknown',
+                    prompt_text TEXT NOT NULL,
+                    risk_score REAL NOT NULL,
+                    is_blocked INTEGER NOT NULL,
+                    category TEXT NOT NULL,
+                    latency_ms REAL NOT NULL,
+                    user_id INTEGER REFERENCES users(id) ON DELETE SET NULL
+                )
+            """)
             conn.commit()
-            
-        # Migration: check if user_id column exists in scans, if not add it
-        try:
-            cursor.execute("SELECT user_id FROM scans LIMIT 1")
-        except sqlite3.OperationalError:
-            logger.info("Database migration: adding user_id column to scans table.")
-            cursor.execute("ALTER TABLE scans ADD COLUMN user_id INTEGER DEFAULT NULL")
+        else:
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS scans (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    timestamp TEXT NOT NULL,
+                    client_ip TEXT NOT NULL DEFAULT 'unknown',
+                    prompt_text TEXT NOT NULL,
+                    risk_score REAL NOT NULL,
+                    is_blocked INTEGER NOT NULL,
+                    category TEXT NOT NULL,
+                    latency_ms REAL NOT NULL
+                )
+            """)
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS users (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    username TEXT NOT NULL UNIQUE,
+                    password_hash TEXT NOT NULL,
+                    created_at TEXT NOT NULL
+                )
+            """)
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS api_keys (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id INTEGER NOT NULL,
+                    key_value TEXT NOT NULL UNIQUE,
+                    key_name TEXT NOT NULL,
+                    rate_limit_per_window INTEGER NOT NULL DEFAULT 100,
+                    is_active INTEGER NOT NULL DEFAULT 1,
+                    created_at TEXT NOT NULL,
+                    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+                )
+            """)
             conn.commit()
-        # Seed default developer credentials (persists developer account across serverless container resets)
+
+            # Migration: check if client_ip column exists, if not add it
+            try:
+                cursor.execute("SELECT client_ip FROM scans LIMIT 1")
+            except sqlite3.OperationalError:
+                logger.info("Database migration: adding client_ip column to scans table.")
+                cursor.execute("ALTER TABLE scans ADD COLUMN client_ip TEXT NOT NULL DEFAULT 'unknown'")
+                conn.commit()
+                
+            # Migration: check if user_id column exists in scans, if not add it
+            try:
+                cursor.execute("SELECT user_id FROM scans LIMIT 1")
+            except sqlite3.OperationalError:
+                logger.info("Database migration: adding user_id column to scans table.")
+                cursor.execute("ALTER TABLE scans ADD COLUMN user_id INTEGER DEFAULT NULL")
+                conn.commit()
+
+        # Seed default developer credentials
         from src.core.auth import hash_password
         dev_username = "rakeshnpvrt@gmail.com"
         dev_password = os.environ.get("DEV_PASSWORD", "rakeshnpvrt123")
         dev_password_hash = hash_password(dev_password)
         
-        cursor.execute("SELECT id FROM users WHERE username = ?", (dev_username,))
+        if is_postgres:
+            cursor.execute("SELECT id FROM users WHERE username = %s", (dev_username,))
+        else:
+            cursor.execute("SELECT id FROM users WHERE username = ?", (dev_username,))
+            
         row = cursor.fetchone()
         created_at = datetime.datetime.now(datetime.timezone.utc).isoformat()
         if not row:
-            cursor.execute(
-                "INSERT INTO users (username, password_hash, created_at) VALUES (?, ?, ?)",
-                (dev_username, dev_password_hash, created_at)
-            )
-            user_id = cursor.lastrowid
-            
-            # Seed default API Key
-            cursor.execute(
-                "INSERT INTO api_keys (user_id, key_value, key_name, rate_limit_per_window, is_active, created_at) VALUES (?, ?, ?, 100, 1, ?)",
-                (user_id, "pg_live_key_98213", "Default Key", created_at)
-            )
-            conn.commit()
-            logger.info("Pre-seeded default developer account and key into database.")
-        else:
-            user_id = row["id"]
-            cursor.execute(
-                "UPDATE users SET password_hash = ? WHERE id = ?",
-                (dev_password_hash, user_id)
-            )
-            
-            # Verify default API key exists
-            cursor.execute("SELECT id FROM api_keys WHERE key_value = 'pg_live_key_98213'")
-            if not cursor.fetchone():
+            if is_postgres:
+                cursor.execute(
+                    "INSERT INTO users (username, password_hash, created_at) VALUES (%s, %s, %s) RETURNING id",
+                    (dev_username, dev_password_hash, created_at)
+                )
+                user_id = cursor.fetchone()[0]
+                cursor.execute(
+                    "INSERT INTO api_keys (user_id, key_value, key_name, rate_limit_per_window, is_active, created_at) VALUES (%s, %s, %s, 100, 1, %s)",
+                    (user_id, "pg_live_key_98213", "Default Key", created_at)
+                )
+            else:
+                cursor.execute(
+                    "INSERT INTO users (username, password_hash, created_at) VALUES (?, ?, ?)",
+                    (dev_username, dev_password_hash, created_at)
+                )
+                user_id = cursor.lastrowid
                 cursor.execute(
                     "INSERT INTO api_keys (user_id, key_value, key_name, rate_limit_per_window, is_active, created_at) VALUES (?, ?, ?, 100, 1, ?)",
                     (user_id, "pg_live_key_98213", "Default Key", created_at)
                 )
             conn.commit()
+            logger.info("Pre-seeded default developer account and key into database.")
+        else:
+            user_id = row["id"]
+            if is_postgres:
+                cursor.execute(
+                    "UPDATE users SET password_hash = %s WHERE id = %s",
+                    (dev_password_hash, user_id)
+                )
+                cursor.execute("SELECT id FROM api_keys WHERE key_value = %s", ("pg_live_key_98213",))
+                if not cursor.fetchone():
+                    cursor.execute(
+                        "INSERT INTO api_keys (user_id, key_value, key_name, rate_limit_per_window, is_active, created_at) VALUES (%s, %s, %s, 100, 1, %s)",
+                        (user_id, "pg_live_key_98213", "Default Key", created_at)
+                    )
+            else:
+                cursor.execute(
+                    "UPDATE users SET password_hash = ? WHERE id = ?",
+                    (dev_password_hash, user_id)
+                )
+                cursor.execute("SELECT id FROM api_keys WHERE key_value = ?", ("pg_live_key_98213",))
+                if not cursor.fetchone():
+                    cursor.execute(
+                        "INSERT INTO api_keys (user_id, key_value, key_name, rate_limit_per_window, is_active, created_at) VALUES (?, ?, ?, 100, 1, ?)",
+                        (user_id, "pg_live_key_98213", "Default Key", created_at)
+                    )
+            conn.commit()
 
-        logger.info("SQLite database verified/initialized successfully at: %s", DB_PATH)
-    except sqlite3.Error as e:
+        if is_postgres:
+            logger.info("Supabase PostgreSQL database verified/initialized successfully.")
+        else:
+            logger.info("SQLite database verified/initialized successfully at: %s", DB_PATH)
+    except Exception as e:
         logger.error("Failed to initialize database schemas: %s", e)
         raise e
     finally:
@@ -194,14 +345,26 @@ def hash_client_ip(ip: str) -> str:
 @contextmanager
 def get_db_connection():
     """
-    Produces thread-local connections to the local database file.
+    Produces thread-local connections to either Supabase Postgres or local SQLite fallback.
     """
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    try:
-        yield conn
-    finally:
-        conn.close()
+    db_url = os.environ.get("SUPABASE_DATABASE_URL")
+    if db_url and psycopg2 is not None:
+        conn = psycopg2.connect(db_url)
+        # Use DictCursor so row results behave like dicts (compatible with sqlite3.Row)
+        cursor = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
+        try:
+            yield conn
+        finally:
+            cursor.close()
+            conn.close()
+    else:
+        raw_conn = sqlite3.connect(DB_PATH)
+        raw_conn.row_factory = sqlite3.Row
+        conn = PostgresToSQLiteConnection(raw_conn)
+        try:
+            yield conn
+        finally:
+            conn.close()
 
 
 @asynccontextmanager
@@ -259,7 +422,7 @@ async def rate_limiting_middleware(request: Request, call_next):
             with get_db_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute(
-                    "SELECT user_id, rate_limit_per_window FROM api_keys WHERE key_value = ? AND is_active = 1",
+                    "SELECT user_id, rate_limit_per_window FROM api_keys WHERE key_value = %s AND is_active = 1",
                     (api_key,)
                 )
                 row = cursor.fetchone()
@@ -279,7 +442,7 @@ async def rate_limiting_middleware(request: Request, call_next):
             decoded_token = urllib.parse.unquote(session_token)
             with get_db_connection() as conn:
                 cursor = conn.cursor()
-                cursor.execute("SELECT id FROM users WHERE username = ?", (decoded_token,))
+                cursor.execute("SELECT id FROM users WHERE username = %s", (decoded_token,))
                 row = cursor.fetchone()
                 if row:
                     user_id = row["id"]
@@ -385,7 +548,7 @@ async def auth_signup(payload: AuthRequest):
                 )
                 
             # Check if user already exists (safety backup)
-            cursor.execute("SELECT id FROM users WHERE username = ?", (username,))
+            cursor.execute("SELECT id FROM users WHERE username = %s", (username,))
             if cursor.fetchone():
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
@@ -397,15 +560,15 @@ async def auth_signup(payload: AuthRequest):
             created_at = datetime.datetime.now(datetime.timezone.utc).isoformat()
             
             cursor.execute(
-                "INSERT INTO users (username, password_hash, created_at) VALUES (?, ?, ?)",
+                "INSERT INTO users (username, password_hash, created_at) VALUES (%s, %s, %s) RETURNING id",
                 (username, pwd_hash, created_at)
             )
-            user_id = cursor.lastrowid
+            user_id = cursor.fetchone()[0]
             
             # Automatically create a default active API key for this user
             default_key = generate_api_key()
             cursor.execute(
-                "INSERT INTO api_keys (user_id, key_value, key_name, rate_limit_per_window, is_active, created_at) VALUES (?, ?, ?, 100, 1, ?)",
+                "INSERT INTO api_keys (user_id, key_value, key_name, rate_limit_per_window, is_active, created_at) VALUES (%s, %s, %s, 100, 1, %s)",
                 (user_id, default_key, "Default Key", created_at)
             )
             conn.commit()
@@ -430,7 +593,7 @@ async def auth_login(payload: AuthRequest):
     try:
         with get_db_connection() as conn:
             cursor = conn.cursor()
-            cursor.execute("SELECT id, password_hash FROM users WHERE username = ?", (username,))
+            cursor.execute("SELECT id, password_hash FROM users WHERE username = %s", (username,))
             row = cursor.fetchone()
             if not row:
                 raise HTTPException(
@@ -471,7 +634,7 @@ async def get_api_keys(request: Request):
         with get_db_connection() as conn:
             cursor = conn.cursor()
             cursor.execute(
-                "SELECT id, key_name, key_value, is_active, created_at FROM api_keys WHERE user_id = ? ORDER BY id DESC",
+                "SELECT id, key_name, key_value, is_active, created_at FROM api_keys WHERE user_id = %s ORDER BY id DESC",
                 (user_id,)
             )
             rows = cursor.fetchall()
@@ -506,11 +669,11 @@ async def create_api_key(payload: KeyCreateRequest, request: Request):
         with get_db_connection() as conn:
             cursor = conn.cursor()
             cursor.execute(
-                "INSERT INTO api_keys (user_id, key_value, key_name, rate_limit_per_window, is_active, created_at) VALUES (?, ?, ?, 100, 1, ?)",
+                "INSERT INTO api_keys (user_id, key_value, key_name, rate_limit_per_window, is_active, created_at) VALUES (%s, %s, %s, 100, 1, %s) RETURNING id",
                 (user_id, new_key, payload.key_name, created_at)
             )
+            key_id = cursor.fetchone()[0]
             conn.commit()
-            key_id = cursor.lastrowid
             
         logger.info("New API key generated for user_id=%d: %s (id=%d)", user_id, payload.key_name, key_id)
         return JSONResponse(content={
@@ -533,11 +696,11 @@ async def delete_api_key(key_id: int, request: Request):
     try:
         with get_db_connection() as conn:
             cursor = conn.cursor()
-            cursor.execute("SELECT id FROM api_keys WHERE id = ? AND user_id = ?", (key_id, user_id))
+            cursor.execute("SELECT id FROM api_keys WHERE id = %s AND user_id = %s", (key_id, user_id))
             if not cursor.fetchone():
                 raise HTTPException(status_code=404, detail="API key not found or access denied.")
                 
-            cursor.execute("DELETE FROM api_keys WHERE id = ?", (key_id,))
+            cursor.execute("DELETE FROM api_keys WHERE id = %s", (key_id,))
             conn.commit()
             
         logger.info("API key revoked: id=%d by user_id=%d", key_id, user_id)
@@ -561,7 +724,7 @@ def is_session_valid(session_token: str) -> bool:
         decoded_token = urllib.parse.unquote(session_token)
         with get_db_connection() as conn:
             cursor = conn.cursor()
-            cursor.execute("SELECT id FROM users WHERE username = ?", (decoded_token,))
+            cursor.execute("SELECT id FROM users WHERE username = %s", (decoded_token,))
             return cursor.fetchone() is not None
     except Exception:
         return False
@@ -810,7 +973,7 @@ async def scan_prompt(payload: ScanRequest, request: Request):
             "ml_latency_ms": round(random.uniform(2.0, 7.0), 2)
         }
 
-    # 6. Commit transaction records to SQLite (with hashed client IP)
+    # 6. Commit transaction records to DB (with hashed client IP)
     user_id = getattr(request.state, "user_id", None)
     try:
         with get_db_connection() as conn:
@@ -818,12 +981,12 @@ async def scan_prompt(payload: ScanRequest, request: Request):
             cursor.execute(
                 """
                 INSERT INTO scans (timestamp, client_ip, prompt_text, risk_score, is_blocked, category, latency_ms, user_id)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
                 """,
                 (timestamp, hashed_ip, payload.prompt, risk_score, is_blocked_val, category, latency_ms, user_id)
             )
             conn.commit()
-    except sqlite3.Error as db_err:
+    except Exception as db_err:
         logger.error("Failed to commit scan transaction records: %s", db_err)
     
     # 7. Assemble response payload
@@ -959,7 +1122,7 @@ async def scan_prompt_stream(payload: StreamScanRequest, request: Request):
                 cursor.execute(
                     """
                     INSERT INTO scans (timestamp, client_ip, prompt_text, risk_score, is_blocked, category, latency_ms, user_id)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
                     """,
                     (timestamp, hashed_ip, payload.prompt[:100], final_risk, final_blocked, final_category, latency_ms, user_id)
                 )
@@ -987,7 +1150,7 @@ async def get_metrics(request: Request):
                     AVG(risk_score) as average_risk,
                     AVG(latency_ms) as average_latency
                 FROM scans
-                WHERE user_id = ? OR (? IS NULL AND user_id IS NULL)
+                WHERE user_id = %s OR (%s IS NULL AND user_id IS NULL)
             """, (user_id, user_id))
             summary_row = cursor.fetchone()
             
@@ -999,7 +1162,7 @@ async def get_metrics(request: Request):
             cursor.execute("""
                 SELECT category, COUNT(*) as count
                 FROM scans
-                WHERE user_id = ? OR (? IS NULL AND user_id IS NULL)
+                WHERE user_id = %s OR (%s IS NULL AND user_id IS NULL)
                 GROUP BY category
             """, (user_id, user_id))
             distribution_rows = cursor.fetchall()
@@ -1015,7 +1178,7 @@ async def get_metrics(request: Request):
             
             return JSONResponse(content=metrics_payload, status_code=status.HTTP_200_OK)
             
-    except sqlite3.Error as db_err:
+    except Exception as db_err:
         logger.error("Failed to compile dashboard metrics: %s", db_err)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -1035,14 +1198,14 @@ async def get_recent_logs(request: Request):
             cursor.execute("""
                 SELECT timestamp, client_ip, prompt_text, risk_score, is_blocked, category, latency_ms
                 FROM scans
-                WHERE user_id = ? OR (? IS NULL AND user_id IS NULL)
+                WHERE user_id = %s OR (%s IS NULL AND user_id IS NULL)
                 ORDER BY id DESC
                 LIMIT 10
             """, (user_id, user_id))
             rows = cursor.fetchall()
             logs = [dict(row) for row in rows]
             return JSONResponse(content=logs, status_code=status.HTTP_200_OK)
-    except sqlite3.Error as e:
+    except Exception as e:
         logger.error("Failed to query scan logs: %s", e)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -1150,7 +1313,7 @@ async def get_shadow_analytics(request: Request):
             cursor = conn.cursor()
             cursor.execute("""
                 SELECT prompt_text, latency_ms FROM scans
-                WHERE user_id = ? OR (? IS NULL AND user_id IS NULL)
+                WHERE user_id = %s OR (%s IS NULL AND user_id IS NULL)
                 ORDER BY id DESC
                 LIMIT 30
             """, (user_id, user_id))
@@ -1191,25 +1354,27 @@ async def get_shadow_analytics(request: Request):
             rules_verdict = "BLOCK" if rules_triggered else "PASS"
             ml_verdict = "BLOCK" if ml_triggered else "PASS"
             
+            # 3. Latency comparison metrics (Rules heuristics vs ML transformer)
+            rules_latency = round(random.uniform(0.1, 0.9), 2)
+            ml_latency = row["latency_ms"]
+            
+            # Agreement rate math
             if rules_verdict == ml_verdict:
                 agreement_count += 1
                 
-            if rules_triggered and ml_triggered:
-                both += 1
-            elif rules_triggered:
+            if rules_verdict == "BLOCK" and ml_verdict == "PASS":
                 rules_only += 1
-            elif ml_triggered:
+            elif rules_verdict == "PASS" and ml_verdict == "BLOCK":
                 ml_only += 1
+            elif rules_verdict == "BLOCK" and ml_verdict == "BLOCK":
+                both += 1
             else:
                 clean += 1
                 
-            rules_lat = round(random.uniform(0.1, 0.4), 2)
-            ml_lat = round(max(1.5, row["latency_ms"] - rules_lat), 2)
-            
             latency_timeline.append({
                 "index": idx + 1,
-                "rules_latency": rules_lat,
-                "ml_latency": ml_lat
+                "rules_latency": rules_latency,
+                "ml_latency": ml_latency
             })
             
         agreement_rate = round((agreement_count / total) * 100.0, 2)
@@ -1226,7 +1391,7 @@ async def get_shadow_analytics(request: Request):
         }
         return JSONResponse(content=analytics_payload, status_code=status.HTTP_200_OK)
         
-    except sqlite3.Error as e:
+    except Exception as e:
         logger.error("Failed to query shadow analytics database: %s", e)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
