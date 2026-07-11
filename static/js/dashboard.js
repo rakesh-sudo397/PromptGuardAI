@@ -233,6 +233,7 @@ async function loadCalibrationConfig() {
         const config = await res.json();
         
         // Populate Sliders and Text labels
+        document.getElementById('chkEnableTransformer').checked = config.enable_transformer || false;
         document.getElementById('threshold-slider').value = config.decision_threshold;
         document.getElementById('valDecisionThreshold').innerText = config.decision_threshold;
         
@@ -273,6 +274,7 @@ async function saveCalibrationConfig() {
 
     const payload = {
         decision_threshold: parseFloat(document.getElementById('threshold-slider').value),
+        enable_transformer: document.getElementById('chkEnableTransformer').checked,
         dampening: {
             length_threshold: parseInt(document.getElementById('dampen-len-slider').value),
             caps_threshold: parseFloat(document.getElementById('dampen-caps-slider').value),

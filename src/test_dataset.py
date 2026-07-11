@@ -4,7 +4,7 @@ import os
 # Adjust path to import from the root src directory
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
-from src.classifier import scan_prompt
+from src.classifier import scan_prompt_hybrid as scan_prompt
 from datasets import load_dataset
 import pandas as pd
 

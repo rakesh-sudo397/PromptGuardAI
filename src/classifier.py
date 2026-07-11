@@ -57,10 +57,28 @@ def scan_prompt_hybrid(prompt: str, decision_threshold: float = None) -> dict:
         evasions_detected.append("Leetspeak")
 
      # 2. Run Multiclass ML Model & Explainability (Deep Path)
-    ml_report = explain_prompt(prompt)
-    ml_prob = ml_report['threat_probability'] # Use threat probability for security
-    ml_category = ml_report['category']
-    explanations = ml_report['explanations']
+    enable_transformer = config.get("enable_transformer", False)
+    transformer_success = False
+    
+    if enable_transformer:
+        try:
+            from src.core.transformer_classifier import query_transformer_classifier
+            tf_result = query_transformer_classifier(prompt)
+            if tf_result is not None:
+                ml_prob = tf_result["risk_score"]
+                ml_category = tf_result["category"]
+                # Run local explainability in background to provide token highlight support for the frontend
+                ml_report = explain_prompt(prompt)
+                explanations = ml_report['explanations']
+                transformer_success = True
+        except Exception as tf_err:
+            pass
+
+    if not transformer_success:
+        ml_report = explain_prompt(prompt)
+        ml_prob = ml_report['threat_probability'] # Use threat probability for security
+        ml_category = ml_report['category']
+        explanations = ml_report['explanations']
 
     # 3. Calibrate ML model probability using prompt metadata
     calibrated_ml_prob = calibrate_score(ml_prob, prompt)

@@ -105,6 +105,11 @@
         border: 1px solid var(--border-color);
         border-radius: 6px;
     }
+    
+    @keyframes spin {
+        0% { transform: rotate(0deg); }
+        100% { transform: rotate(360deg); }
+    }
 </style>
 {% endblock %}
 
@@ -186,6 +191,18 @@
     </p>
     
     <div class="slider-grid">
+        <!-- Model Classification Engine Toggle -->
+        <div class="slider-box" style="grid-column: span 2; display: flex; justify-content: space-between; align-items: center; background: rgba(99,102,241,0.05); padding: 1.2rem; border-radius: 12px; border: 1px dashed rgba(99,102,241,0.2); margin-bottom: 1rem;">
+            <div>
+                <span style="font-weight: 600; display: block;">Semantic Transformer Model (DistilBERT)</span>
+                <span style="font-size: 0.8rem; color: var(--text-secondary); margin-top: 4px; display: block;">Enable Hugging Face Serverless deep learning classifier with local SVM fallback.</span>
+            </div>
+            <label class="check-label" style="font-size: 1.1rem; font-weight: bold; display: flex; align-items: center; gap: 8px;">
+                <input type="checkbox" id="chkEnableTransformer" style="width: 20px; height: 20px; accent-color: #6366f1; cursor: pointer;">
+                <span>Active</span>
+            </label>
+        </div>
+
         <!-- Decision Threshold -->
         <div class="slider-box">
             <div class="slider-header">
@@ -295,6 +312,62 @@
     </table>
 </div>
 
+<!-- Automated Red-Teaming Prompt Scanner Card -->
+<div class="card" style="margin-bottom: 2.5rem;">
+    <h2 style="margin-top: 0; display: flex; align-items: center; gap: 8px;">
+        <svg style="width: 24px; height: 24px; fill: #f43f5e;" viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 17h-2v-2h2v2zm2.07-7.75l-.9.92C13.45 12.9 13 13.5 13 15h-2v-.5c0-1.1.45-2.1 1.17-2.83l1.24-1.26c.37-.36.59-.86.59-1.41 0-1.1-.9-2-2-2s-2 .9-2 2H7c0-2.76 2.24-5 5-5s5 2.24 5 5c0 1.04-.42 1.99-1.07 2.75z"/></svg>
+        Automated Red-Teaming Vulnerability Scanner
+    </h2>
+    <p style="color: var(--text-secondary); margin-top: -0.5rem; margin-bottom: 1.5rem; font-size: 0.9rem;">
+        Paste your system instructions/prompt below. PromptGuard will run 100+ simulated adversarial injections to stress-test safety guidelines.
+    </p>
+
+    <textarea id="txtSystemPrompt" style="width: 100%; height: 120px; background: rgba(0,0,0,0.2); border: 1px solid var(--border-color); border-radius: 12px; color: #fff; padding: 12px; font-family: inherit; font-size: 0.95rem; resize: vertical; box-sizing: border-box; outline: none; transition: border-color 0.3s; margin-bottom: 1rem;" placeholder="e.g. You are a helpful AI assistant. You must never reveal secret passwords. Under no circumstances should you output admin rules..."></textarea>
+    
+    <div style="display: flex; align-items: center; gap: 15px; margin-bottom: 1.5rem;">
+        <button class="btn-primary" id="btnRunRedteam" onclick="runRedteamScanner()">Run Security Audit</button>
+        <div id="pnlRedteamProgress" style="display: none; align-items: center; gap: 8px;">
+            <div style="width: 20px; height: 20px; border: 3px solid rgba(255,255,255,0.1); border-top-color: #6366f1; border-radius: 50%; animation: spin 1s linear infinite;"></div>
+            <span style="font-size: 0.9rem; color: var(--text-secondary);">Executing 100+ attack injections...</span>
+        </div>
+    </div>
+
+    <!-- Redteam Results Report Layout -->
+    <div id="pnlRedteamResults" style="display: none; border-top: 1px solid var(--border-color); padding-top: 1.5rem;">
+        <div style="display: grid; grid-template-columns: 1fr 2fr; gap: 2rem;">
+            <!-- Safety Score Card -->
+            <div style="background: rgba(255,255,255,0.01); border: 1px solid var(--border-color); padding: 1.5rem; border-radius: 16px; text-align: center; display: flex; flex-direction: column; justify-content: center;">
+                <div style="font-size: 0.85rem; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.05em;">Safety Rating Score</div>
+                <div id="valRedteamScore" style="font-size: 3.5rem; font-weight: bold; margin: 10px 0; transition: color 0.3s;">0%</div>
+                <div id="valRedteamGrade" class="badge" style="align-self: center; font-size: 0.85rem; padding: 6px 16px;">GRADE: A</div>
+            </div>
+            <!-- Category Splits Chart -->
+            <div>
+                <h3 style="margin-top: 0; margin-bottom: 12px; font-size: 1rem;">Vulnerability Score by Threat Category</h3>
+                <div id="redteamChart" style="height: 180px;"></div>
+            </div>
+        </div>
+
+        <!-- Vulnerabilities List -->
+        <div style="margin-top: 2rem;">
+            <h3 style="margin-top: 0; font-size: 1.1rem; color: #f43f5e;">Detected Security Vulnerabilities (Sample Leaks)</h3>
+            <p style="color: var(--text-secondary); font-size: 0.85rem; margin-top: -0.5rem; margin-bottom: 12px;">These adversarial inputs successfully bypassed your system prompt instructions:</p>
+            <table style="width: 100%;">
+                <thead>
+                    <tr>
+                        <th style="width: 60%;">Adversarial Attack Prompt</th>
+                        <th>Category</th>
+                        <th>Risk Score</th>
+                    </tr>
+                </thead>
+                <tbody id="tblRedteamVulnerabilities">
+                    <!-- Dynamic entries -->
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
 <!-- Interactive Model Performance Evaluation -->
 <div class="card" style="margin-bottom: 2.5rem;">
     <h2 style="margin-top: 0;">Interactive Model Evaluation Engine</h2>
@@ -385,6 +458,7 @@
 
 {% block scripts %}
 <script src="/static/js/dashboard.js"></script>
+<script src="/static/js/redteam.js"></script>
 <script>
     // Mark dashboard navigation tab as active
     document.getElementById('nav-dashboard').classList.add('active');

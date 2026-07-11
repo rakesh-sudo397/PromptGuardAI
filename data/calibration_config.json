@@ -1,5 +1,6 @@
 {
   "decision_threshold": 0.45,
+  "enable_transformer": false,
   "dampening": {
     "length_threshold": 100,
     "caps_threshold": 0.15,

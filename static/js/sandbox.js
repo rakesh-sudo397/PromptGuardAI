@@ -12,6 +12,7 @@ async function executeSecurityCheck() {
     const enableRedact = document.getElementById('chkRedact')?.checked || false;
     const enableFirewall = document.getElementById('chkFirewall')?.checked || false;
     const enableShadow = document.getElementById('chkShadow')?.checked || false;
+    const enableStream = document.getElementById('chkStream')?.checked || false;
     
     // Retrieve downstream target settings
     const downstreamType = document.getElementById('selDownstreamType')?.value || 'mock';
@@ -32,12 +33,103 @@ async function executeSecurityCheck() {
     if (firewallCard) firewallCard.style.display = 'none';
     if (shadowCard) shadowCard.style.display = 'none';
 
+    // 1. Streaming response loop
+    if (enableStream) {
+        firewallCard.style.display = 'block';
+        document.getElementById('lblFirewallStatus').innerText = 'Streaming...';
+        document.getElementById('lblFirewallStatus').className = 'badge bg-green';
+        const valFirewallText = document.getElementById('valFirewallText');
+        valFirewallText.innerText = '';
+        
+        try {
+            const res = await fetch("/api/v1/scan/stream", {
+                method: 'POST',
+                headers: { 
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ 
+                    prompt: promptText,
+                    enable_scrub: enableScrub,
+                    enable_redact: enableRedact,
+                    enable_firewall: enableFirewall,
+                    downstream_type: downstreamType,
+                    downstream_model: downstreamModel,
+                    downstream_token: downstreamToken
+                })
+            });
+            
+            if (res.status === 401) {
+                alert("Security error: 401 Unauthorized API Key.");
+                scanBtn.innerText = originalBtnText;
+                scanBtn.disabled = false;
+                return;
+            }
+            
+            const reader = res.body.getReader();
+            const decoder = new TextDecoder();
+            let done = false;
+            
+            outputContainer.style.display = 'block';
+            const decisionBadge = document.getElementById('lblDecision');
+            decisionBadge.innerText = 'Evaluating...';
+            decisionBadge.className = 'badge bg-green';
+            
+            while (!done) {
+                const { value, done: readerDone } = await reader.read();
+                done = readerDone;
+                if (value) {
+                    const chunk = decoder.decode(value, { stream: !done });
+                    const lines = chunk.split("\n");
+                    for (const line of lines) {
+                        if (line.startsWith("data: ")) {
+                            try {
+                                const data = JSON.parse(line.substring(6));
+                                if (data.event === "block") {
+                                    decisionBadge.innerText = 'BLOCKED / THREAT';
+                                    decisionBadge.className = 'badge bg-red';
+                                    outputContainer.style.borderColor = 'rgba(244, 63, 94, 0.4)';
+                                    
+                                    document.getElementById('lblFirewallStatus').innerText = 'Blocked';
+                                    document.getElementById('lblFirewallStatus').className = 'badge bg-red';
+                                    
+                                    if (data.chunk) {
+                                        valFirewallText.innerHTML = `<span style="color: #f43f5e; font-weight: bold;">${data.chunk}</span>`;
+                                    } else {
+                                        valFirewallText.innerHTML = `<span style="color: #f43f5e; font-weight: bold;">[BLOCKED] Threat detected in prompt (${data.category})</span>`;
+                                    }
+                                    done = true;
+                                    break;
+                                } else if (data.event === "chunk") {
+                                    decisionBadge.innerText = 'PASSED / SAFE';
+                                    decisionBadge.className = 'badge bg-green';
+                                    outputContainer.style.borderColor = 'rgba(16, 185, 129, 0.4)';
+                                    
+                                    valFirewallText.innerText += data.chunk;
+                                } else if (data.event === "done") {
+                                    document.getElementById('lblFirewallStatus').innerText = 'Clean';
+                                    document.getElementById('lblFirewallStatus').className = 'badge bg-green';
+                                }
+                            } catch (e) {
+                                // Ignore incomplete chunks
+                            }
+                        }
+                    }
+                }
+            }
+        } catch (err) {
+            alert("Streaming connection error: " + err);
+        } finally {
+            scanBtn.innerText = originalBtnText;
+            scanBtn.disabled = false;
+        }
+        return;
+    }
+
     try {
         const res = await fetch("/api/v1/scan", {
             method: 'POST',
             headers: { 
-                'Content-Type': 'application/json',
-                'X-API-Key': 'pg_live_key_98213'
+                'Content-Type': 'application/json'
             },
             body: JSON.stringify({ 
                 prompt: promptText,
