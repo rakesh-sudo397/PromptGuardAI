@@ -337,8 +337,8 @@ def init_db():
             user_id = row["id"]
             if is_postgres:
                 cursor.execute(
-                    "UPDATE users SET password_hash = %s, role = 'admin' WHERE id = %s",
-                    (dev_password_hash, user_id)
+                    "UPDATE users SET role = 'admin' WHERE id = %s",
+                    (user_id,)
                 )
                 cursor.execute("SELECT id FROM api_keys WHERE key_value = %s", ("pg_live_key_98213",))
                 if not cursor.fetchone():
@@ -348,8 +348,8 @@ def init_db():
                     )
             else:
                 cursor.execute(
-                    "UPDATE users SET password_hash = ?, role = 'admin' WHERE id = ?",
-                    (dev_password_hash, user_id)
+                    "UPDATE users SET role = 'admin' WHERE id = ?",
+                    (user_id,)
                 )
                 cursor.execute("SELECT id FROM api_keys WHERE key_value = ?", ("pg_live_key_98213",))
                 if not cursor.fetchone():
@@ -654,6 +654,134 @@ async def auth_login(payload: AuthRequest):
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Authentication failed: {str(e)}"
         )
+
+
+
+# ==========================================
+# EXTRA AUTH & OAUTH SIMULATION ENDPOINTS
+# ==========================================
+
+class ForgotPasswordRequest(BaseModel):
+    username: str = Field(..., min_length=3, max_length=100)
+    new_password: str = Field(..., min_length=8, max_length=100)
+
+
+class ChangePasswordRequest(BaseModel):
+    old_password: str = Field(..., min_length=1, max_length=100)
+    new_password: str = Field(..., min_length=8, max_length=100)
+
+
+@app.get("/api/v1/auth/oauth/{provider}")
+async def oauth_login_simulation(provider: str):
+    provider = provider.strip().lower()
+    if provider not in ("google", "github"):
+        raise HTTPException(status_code=400, detail="Unsupported OAuth provider.")
+        
+    mock_email = f"oauth_{provider}_dev@promptguard.ai"
+    created_at = datetime.datetime.now(datetime.timezone.utc).isoformat()
+    
+    try:
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            
+            cursor.execute("SELECT id, role FROM users WHERE username = %s", (mock_email,))
+            user = cursor.fetchone()
+            
+            if not user:
+                from src.core.auth import hash_password
+                dummy_hash = hash_password(os.urandom(16).hex())
+                cursor.execute(
+                    "INSERT INTO users (username, password_hash, role, created_at) VALUES (%s, %s, 'user', %s) RETURNING id",
+                    (mock_email, dummy_hash, created_at)
+                )
+                user_id = cursor.fetchone()[0]
+                role = "user"
+                
+                cursor.execute(
+                    "INSERT INTO api_keys (user_id, key_value, key_name, rate_limit_per_window, is_active, created_at) VALUES (%s, %s, 'OAuth Sim Key', 100, 1, %s)",
+                    (user_id, f"pg_live_{provider}_{os.urandom(8).hex()}", created_at)
+                )
+                conn.commit()
+            else:
+                user_id = user["id"]
+                role = user["role"]
+                
+        import urllib.parse
+        encoded_token = urllib.parse.quote(mock_email)
+        
+        response = RedirectResponse(url="/sandbox", status_code=status.HTTP_303_SEE_OTHER)
+        response.set_cookie(
+            key="session_token",
+            value=encoded_token,
+            httponly=False,
+            max_age=86400,
+            samesite="lax",
+            secure=False
+        )
+        return response
+    except Exception as e:
+        logger.error("OAuth authentication failed: %s", e)
+        raise HTTPException(status_code=500, detail="OAuth redirection failed.")
+
+
+@app.post("/api/v1/auth/reset-password")
+async def reset_password_direct(payload: ForgotPasswordRequest):
+    username = payload.username.strip().lower()
+    new_password = payload.new_password
+    
+    from src.core.auth import hash_password
+    new_hash = hash_password(new_password)
+    
+    try:
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT id FROM users WHERE username = %s", (username,))
+            user = cursor.fetchone()
+            if not user:
+                raise HTTPException(status_code=404, detail="Username not registered in the system.")
+                
+            cursor.execute("UPDATE users SET password_hash = %s WHERE id = %s", (new_hash, user["id"]))
+            conn.commit()
+            
+        logger.info("Password direct reset successful for user: %s", username)
+        return JSONResponse(content={"message": "Password reset successful! You can now log in."}, status_code=status.HTTP_200_OK)
+    except HTTPException as he:
+        raise he
+    except Exception as e:
+        logger.error("Forgot password reset failed: %s", e)
+        raise HTTPException(status_code=500, detail="Database write error during password reset.")
+
+
+@app.post("/api/v1/auth/change-password")
+async def change_user_password(payload: ChangePasswordRequest, request: Request):
+    user_id = getattr(request.state, "user_id", None)
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+        
+    old_pass = payload.old_password
+    new_pass = payload.new_password
+    
+    from src.core.auth import hash_password, verify_password
+    
+    try:
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT password_hash FROM users WHERE id = %s", (user_id,))
+            user = cursor.fetchone()
+            if not user or not verify_password(old_pass, user["password_hash"]):
+                raise HTTPException(status_code=400, detail="Current password entered is incorrect.")
+                
+            new_hash = hash_password(new_pass)
+            cursor.execute("UPDATE users SET password_hash = %s WHERE id = %s", (new_hash, user_id))
+            conn.commit()
+            
+        logger.info("User ID %d changed their password successfully.", user_id)
+        return JSONResponse(content={"message": "Password updated successfully!"}, status_code=status.HTTP_200_OK)
+    except HTTPException as he:
+        raise he
+    except Exception as e:
+        logger.error("Failed to change password: %s", e)
+        raise HTTPException(status_code=500, detail="Database update error.")
 
 
 class KeyCreateRequest(BaseModel):

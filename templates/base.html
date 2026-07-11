@@ -9,28 +9,39 @@
 </head>
 <body>
     <div class="container">
-        <!-- Navigation Tabs -->
-        <div class="tabs" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2rem;">
-            <div style="display: flex; align-items: center; gap: 15px;">
-                <a href="/sandbox" id="nav-sandbox" class="tab-btn">Sandbox Console</a>
-                <a href="/dashboard" id="nav-dashboard" class="tab-btn">Analytics Dashboard</a>
+        <!-- Header Navigation Bar -->
+        <header style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 3.5rem; flex-wrap: wrap; gap: 20px;">
+            <!-- Branding -->
+            <a href="/sandbox" style="text-decoration: none; display: flex; align-items: center; gap: 10px;">
+                <span style="font-size: 1.5rem;">🛡️</span>
+                <span style="font-family: 'Outfit', sans-serif; font-weight: 700; font-size: 1.45rem; background: linear-gradient(135deg, #818cf8 0%, #c084fc 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">PromptGuard AI</span>
+            </a>
+
+            <!-- Navigation Capsule -->
+            <div class="tabs" style="margin-bottom: 0; padding: 4px; display: flex; align-items: center; gap: 4px;">
+                <a href="/sandbox" id="nav-sandbox" class="tab-btn" style="padding: 8px 20px; font-size: 0.85rem;">Sandbox</a>
+                <a href="/dashboard" id="nav-dashboard" class="tab-btn" style="padding: 8px 20px; font-size: 0.85rem;">Analytics</a>
                 {% if role == 'admin' %}
-                <a href="/admin" id="nav-admin" class="tab-btn" style="border-color: rgba(99, 102, 241, 0.4); color: #818cf8;">Admin Console</a>
+                <a href="/admin" id="nav-admin" class="tab-btn" style="padding: 8px 20px; font-size: 0.85rem;">Admin</a>
                 {% endif %}
             </div>
-            <div style="display: flex; align-items: center; gap: 15px;">
-                <div style="text-align: right; font-size: 0.85rem;">
-                    <span style="color: var(--text-secondary);">Logged in as:</span>
-                    <strong style="color: #fff; display: block;">{{ username }} 
-                        <span style="font-size: 0.7rem; padding: 2px 6px; border-radius: 4px; margin-left: 5px; font-weight: bold; text-transform: uppercase;
+
+            <!-- Identity and Logout -->
+            <div style="display: flex; align-items: center; gap: 20px;">
+                {% if username %}
+                <div style="text-align: right; font-size: 0.85rem; border-right: 1px solid rgba(255,255,255,0.08); padding-right: 20px; display: block;">
+                    <span style="color: var(--text-secondary); font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; display: block; margin-bottom: 2px;">Developer Account</span>
+                    <strong style="color: #fff; display: flex; align-items: center; gap: 6px;">{{ username }}
+                        <span style="font-size: 0.65rem; padding: 2px 6px; border-radius: 4px; font-weight: bold; text-transform: uppercase;
                             {% if role == 'admin' %} background: rgba(99, 102, 241, 0.2); border: 1px solid #6366f1; color: #818cf8; {% else %} background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); color: var(--text-secondary); {% endif %}">
                             {{ role }}
                         </span>
                     </strong>
                 </div>
-                <a href="/logout" class="tab-btn" style="border: 1px solid rgba(239, 68, 68, 0.2); background: rgba(239, 68, 68, 0.05); color: #f87171; border-radius: 8px; padding: 0.5rem 1rem;">Sign Out</a>
+                <a href="/logout" class="tab-btn" style="border: 1px solid rgba(239, 68, 68, 0.3); background: rgba(239, 68, 68, 0.05); color: #f87171; border-radius: 100px; padding: 8px 18px; font-size: 0.85rem;">Sign Out</a>
+                {% endif %}
             </div>
-        </div>
+        </header>
         
         <!-- Page Body Content -->
         {% block content %}{% endblock %}

@@ -9,6 +9,7 @@ function switchTab(tab) {
     const registerToggle = document.getElementById('toggle-register');
     const loginForm = document.getElementById('login-form');
     const registerForm = document.getElementById('register-form');
+    const forgotForm = document.getElementById('forgot-form');
     const subtext = document.getElementById('auth-subtext');
     const alertDiv = document.getElementById('auth-alert');
 
@@ -20,13 +21,22 @@ function switchTab(tab) {
         registerToggle.classList.remove('active');
         loginForm.classList.add('active');
         registerForm.classList.remove('active');
+        forgotForm.classList.remove('active');
         subtext.textContent = 'Sign in to manage LLM security gateways';
-    } else {
+    } else if (tab === 'register') {
         loginToggle.classList.remove('active');
         registerToggle.classList.add('active');
         loginForm.classList.remove('active');
         registerForm.classList.add('active');
+        forgotForm.classList.remove('active');
         subtext.textContent = 'Join the PromptGuard developer network';
+    } else if (tab === 'forgot') {
+        loginToggle.classList.remove('active');
+        registerToggle.classList.remove('active');
+        loginForm.classList.remove('active');
+        registerForm.classList.remove('active');
+        forgotForm.classList.add('active');
+        subtext.textContent = 'Recover your developer account';
     }
 }
 
@@ -89,4 +99,54 @@ function showAlert(message) {
     const alertDiv = document.getElementById('auth-alert');
     alertDiv.textContent = message;
     alertDiv.style.display = 'block';
+}
+
+function togglePasswordVisibility(inputId) {
+    const input = document.getElementById(inputId);
+    const btn = input.nextElementSibling;
+    if (input.type === 'password') {
+        input.type = 'text';
+        btn.textContent = '🙈';
+    } else {
+        input.type = 'password';
+        btn.textContent = '👁️';
+    }
+}
+
+async function handleForgotPassword(event) {
+    event.preventDefault();
+    const alertDiv = document.getElementById('auth-alert');
+    alertDiv.style.display = 'none';
+
+    const username = document.getElementById('forgot-username').value.trim();
+    const new_password = document.getElementById('forgot-password').value;
+
+    if (new_password.length < 8) {
+        showAlert('Password must be at least 8 characters long.');
+        return;
+    }
+
+    try {
+        const response = await fetch('/api/v1/auth/reset-password', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ username, new_password })
+        });
+
+        const data = await response.json();
+
+        if (!response.ok) {
+            showAlert(data.detail || 'Password reset failed.');
+            return;
+        }
+
+        alert('Password reset successful! You can now log in with your new password.');
+        switchTab('login');
+
+    } catch (err) {
+        console.error('Password reset request error:', err);
+        showAlert('Network error. Failed to reach the security gateway.');
+    }
 }
