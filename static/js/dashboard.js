@@ -3,9 +3,27 @@ let latencyChart = null;
 let shadowSplitChart = null;
 let shadowLatencyChart = null;
 
+function getCurrentUser() {
+    const name = "session_token=";
+    const decodedCookie = decodeURIComponent(document.cookie);
+    const ca = decodedCookie.split(';');
+    for(let i = 0; i < ca.length; i++) {
+        let c = ca[i];
+        while (c.charAt(0) == ' ') {
+            c = c.substring(1);
+        }
+        if (c.indexOf(name) == 0) {
+            return c.substring(name.length, c.length);
+        }
+    }
+    return "default_user";
+}
+
 // Fetch metrics, update charts, load calibration settings, and logs
 async function fetchSystemStats() {
     try {
+        const username = getCurrentUser();
+        
         // 1. Fetch telemetry metrics
         const resMetrics = await fetch('/api/v1/metrics');
         if (!resMetrics.ok) {
@@ -15,7 +33,17 @@ async function fetchSystemStats() {
             }
             throw new Error('Metrics fetch failed');
         }
-        const data = await resMetrics.json();
+        let data = await resMetrics.json();
+        
+        // Cache management
+        if (data.total_scans > 0) {
+            localStorage.setItem(username + '_metrics', JSON.stringify(data));
+        } else {
+            const cachedMetrics = localStorage.getItem(username + '_metrics');
+            if (cachedMetrics) {
+                data = JSON.parse(cachedMetrics);
+            }
+        }
         
         document.getElementById('valTotal').innerText = data.total_scans;
         document.getElementById('valBlocked').innerText = data.blocked_scans;
@@ -48,7 +76,16 @@ async function fetchSystemStats() {
             }
             throw new Error('Logs fetch failed');
         }
-        const logs = await resLogs.json();
+        let logs = await resLogs.json();
+        
+        if (logs.length > 0) {
+            localStorage.setItem(username + '_logs', JSON.stringify(logs));
+        } else {
+            const cachedLogs = localStorage.getItem(username + '_logs');
+            if (cachedLogs) {
+                logs = JSON.parse(cachedLogs);
+            }
+        }
 
         const logsBody = document.getElementById('tblLogsBody');
         logsBody.innerHTML = '';
@@ -414,6 +451,8 @@ async function runPerformanceEvaluation() {
 // ----------------------------------------------------
 async function fetchShadowStats() {
     try {
+        const username = getCurrentUser();
+        
         const res = await fetch('/api/v1/shadow_analytics');
         if (!res.ok) {
             if (res.status === 401) {
@@ -422,7 +461,17 @@ async function fetchShadowStats() {
             }
             throw new Error('Shadow analytics fetch failed');
         }
-        const data = await res.json();
+        let data = await res.json();
+        
+        const hasData = (data.splits.clean + data.splits.rules_only + data.splits.ml_only + data.splits.both) > 0;
+        if (hasData) {
+            localStorage.setItem(username + '_shadow', JSON.stringify(data));
+        } else {
+            const cachedShadow = localStorage.getItem(username + '_shadow');
+            if (cachedShadow) {
+                data = JSON.parse(cachedShadow);
+            }
+        }
         
         document.getElementById('valAgreementRate').innerText = data.agreement_rate.toFixed(2) + '%';
         document.getElementById('valRulesOnly').innerText = data.splits.rules_only;
