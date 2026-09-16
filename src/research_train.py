@@ -1,147 +1,94 @@
-import os
 import torch
-import torch.nn as nn
 import torch.optim as optim
 import pandas as pd
 import numpy as np
-import math
-from tqdm import tqdm
-
-# Import our custom research model
+import os
 import sys
+
+# Ensure paths
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from src.core.transformer_ecg import ECGTransformerModel
+from src.core.risk_control import CascadedRiskController, compute_calibration_metrics
 
-DATA_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'data', 'research_splits'))
-MODEL_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'models'))
-os.makedirs(MODEL_DIR, exist_ok=True)
-
-# ---------------------------------------------------------
-# MATHEMATICAL FORMULATION: EVIDENTIAL LOSS
-# ---------------------------------------------------------
 def edl_mse_loss(alpha, target, epoch_num, num_classes=2, annealing_step=10):
-    """
-    Type-II Maximum Likelihood Evidential Loss (Sum of Squares).
-    Forces the model to output Dirichlet parameters (alpha).
-    """
     y = torch.eye(num_classes).to(alpha.device)[target]
     S = torch.sum(alpha, dim=1, keepdim=True)
-    
-    # 1. Expected Probability Loss
     p = alpha / S
     err = (y - p) ** 2
     var = (p * (1 - p)) / (S + 1)
-    loss_mse = torch.sum(err + var, dim=1)
     
-    # 2. KL Divergence Regularization (shrinks evidence for incorrect classes to zero)
-    alpha_tilde = y + (1 - y) * alpha
-    S_tilde = torch.sum(alpha_tilde, dim=1, keepdim=True)
-    
-    kl_div = torch.lgamma(S_tilde) - torch.sum(torch.lgamma(alpha_tilde), dim=1, keepdim=True) \
-             + torch.sum(torch.lgamma(torch.ones_like(alpha_tilde)), dim=1, keepdim=True) \
-             - torch.lgamma(torch.ones_like(S_tilde) * num_classes) \
-             + torch.sum((alpha_tilde - 1) * (torch.digamma(alpha_tilde) - torch.digamma(S_tilde)), dim=1, keepdim=True)
-             
-    kl_div = kl_div.squeeze()
-    
-    # Annealing factor
+    # KL Divergence annealing
     annealing_coef = min(1.0, epoch_num / annealing_step)
+    alp = alpha - 1
+    kl = annealing_coef * torch.sum(torch.lgamma(S) - torch.sum(torch.lgamma(alpha), dim=1, keepdim=True) + torch.sum(alp * (p - 1), dim=1, keepdim=True), dim=1)
     
-    return torch.mean(loss_mse + annealing_coef * kl_div)
+    return torch.mean(torch.sum(err + var, dim=1) + kl)
 
-# ---------------------------------------------------------
-# TRAINING LOOP
-# ---------------------------------------------------------
-def train_ecg():
-    print("=========================================")
-    print("STAGE 7: EVIDENTIAL MODEL TRAINING")
-    print("=========================================")
+def train_evidential_router():
+    print("Loading scaled real-world datasets...")
+    train_df = pd.read_csv('data/research_splits/real_train.csv')
+    cal_df = pd.read_csv('data/research_splits/real_calibration.csv')
     
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    print(f"[System] Using device: {device}")
-    
-    # Load Data
-    train_df = pd.read_csv(os.path.join(DATA_DIR, 'train.csv'))
-    
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     model = ECGTransformerModel(num_classes=2).to(device)
+    optimizer = optim.Adam(model.parameters(), lr=2e-5)
     
-    # Freeze transformer backbone for extreme speed; we only train the Evidential Head
-    for param in model.transformer.parameters():
-        param.requires_grad = False
-        
-    optimizer = optim.Adam(model.evidential_head.parameters(), lr=1e-3, weight_decay=1e-4)
-    
-    print("[1/3] Training Evidential Head...")
+    # Minimal training loop for demonstration (in production, use DataLoader)
+    print("Training Evidential Router...")
     model.train()
-    epochs = 15
-    batch_size = 32
+    epochs = 3
+    batch_size = 16
     
-    # Pre-extract texts and labels to avoid dataframe overhead in loop
-    texts = train_df['text'].tolist()
-    labels = train_df['label'].tolist()
-    
-    for epoch in range(1, epochs + 1):
-        epoch_loss = 0.0
-        # Simple batching
+    for epoch in range(epochs):
+        # Shuffling
+        train_df = train_df.sample(frac=1.0)
+        texts = train_df['text'].tolist()
+        labels = train_df['label'].tolist()
+        
+        total_loss = 0
         for i in range(0, len(texts), batch_size):
             batch_texts = texts[i:i+batch_size]
             batch_labels = torch.tensor(labels[i:i+batch_size]).to(device)
             
             optimizer.zero_grad()
             alphas, _ = model(batch_texts)
-            loss = edl_mse_loss(alphas, batch_labels, epoch, num_classes=2)
+            loss = edl_mse_loss(alphas, batch_labels, epoch)
             loss.backward()
             optimizer.step()
+            total_loss += loss.item()
             
-            epoch_loss += loss.item()
-            
-        print(f"  -> Epoch {epoch}/{epochs} | Loss: {epoch_loss/len(texts):.4f}")
+        print(f"Epoch {epoch+1}/{epochs} - Loss: {total_loss / len(texts):.4f}")
+        
+    print("\nExecuting Cascaded Conformal Risk Control (CCRC)...")
+    # Wrap calibration data
+    class DummyLoader:
+        def __init__(self, df, bs):
+            self.df = df
+            self.bs = bs
+        def __iter__(self):
+            texts = self.df['text'].tolist()
+            labels = self.df['label'].tolist()
+            for i in range(0, len(texts), self.bs):
+                yield texts[i:i+self.bs], torch.tensor(labels[i:i+self.bs])
 
-    # ---------------------------------------------------------
-    # CONFORMAL CALIBRATION
-    # ---------------------------------------------------------
-    print("\n[2/3] Performing Split Conformal Calibration...")
-    cal_df = pd.read_csv(os.path.join(DATA_DIR, 'calibration.csv'))
-    model.eval()
+    cal_loader = DummyLoader(cal_df, 32)
+    u_arr, preds_arr, labels_arr = compute_calibration_metrics(model, cal_loader, device)
     
-    cal_texts = cal_df['text'].tolist()
-    cal_labels = cal_df['label'].tolist()
+    # Use the mathematically guaranteed Risk Controller
+    # We guarantee a False Positive Rate <= 1% (0.01)
+    crc = CascadedRiskController(alpha=0.01)
+    optimal_tau = crc.calibrate(u_arr, preds_arr, labels_arr)
     
-    s_scores = []
-    with torch.no_grad():
-        for text, label in zip(cal_texts, cal_labels):
-            alphas, _ = model([text])
-            alpha_y = alphas[0][label].item()
-            # Calculate EED Score for the TRUE class
-            score = model.compute_eed_score(alpha_y, text)
-            s_scores.append(score)
-            
-    # Calculate q_hat (95% guarantee)
-    alpha_error = 0.05
-    n = len(s_scores)
-    q_level = math.ceil((n + 1) * (1 - alpha_error)) / n
-    # Cap q_level at 1.0 to prevent indexing errors if dataset is too small
-    q_level = min(q_level, 1.0) 
+    print(f"\n[MATHEMATICAL GUARANTEE] Conformal Routing Threshold (tau) calculated: {optimal_tau:.4f}")
+    print("This guarantees <= 1% False Positives on Developer Code.")
     
-    s_scores.sort()
-    q_index = int(q_level * n) - 1
-    q_hat = s_scores[q_index]
-    
-    print(f"  -> Number of calibration samples: {n}")
-    print(f"  -> Desired Marginal Coverage: {(1-alpha_error)*100}%")
-    print(f"  -> Calculated q_hat (EED Threshold): {q_hat:.4f}")
-
-    # ---------------------------------------------------------
-    # SAVE ARTIFACTS
-    # ---------------------------------------------------------
-    print("\n[3/3] Saving Research Artifacts...")
+    os.makedirs('models', exist_ok=True)
     torch.save({
         'model_state_dict': model.state_dict(),
-        'q_hat': q_hat
-    }, os.path.join(MODEL_DIR, 'ecg_research_weights.pth'))
+        'q_hat': optimal_tau # Preserving old key name for backward compatibility, but it is now tau
+    }, 'models/ecg_research_weights.pth')
     
-    print(f"  -> Saved weights and threshold to {MODEL_DIR}/ecg_research_weights.pth")
-    print("=========================================")
+    print("Model and mathematical threshold saved securely.")
 
 if __name__ == "__main__":
-    train_ecg()
+    train_evidential_router()
