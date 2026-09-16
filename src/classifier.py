@@ -1,11 +1,11 @@
 import sys
 import os
+import torch
+import numpy as np
 
 # Adjust path to find modules from the root PromptGuard-AI folder
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
-from src.core.calibration import calibrate_score, load_calibration_config
-from src.core.explainability import explain_prompt
 from src.rules import JAILBREAK_RULES
 from src.preprocessing import (
     clean_text,
@@ -14,16 +14,35 @@ from src.preprocessing import (
     decode_hex_payloads,
     normalize_leetspeak
 )
+from src.core.transformer_ecg import ECGTransformerModel
+
+# Global Model Loading for fast API inference
+MODEL_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'models'))
+WEIGHTS_PATH = os.path.join(MODEL_DIR, 'ecg_research_weights.pth')
+
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+_ecg_model = None
+_q_hat = None
+
+def load_ecg_model():
+    """Lazily loads the PyTorch Transformer ECG model to avoid startup lag."""
+    global _ecg_model, _q_hat
+    if _ecg_model is None:
+        if not os.path.exists(WEIGHTS_PATH):
+            raise FileNotFoundError(f"Research weights not found at {WEIGHTS_PATH}. Run research_train.py first.")
+        checkpoint = torch.load(WEIGHTS_PATH, map_location=device, weights_only=True)
+        _q_hat = checkpoint['q_hat']
+        
+        _ecg_model = ECGTransformerModel(num_classes=2).to(device)
+        _ecg_model.load_state_dict(checkpoint['model_state_dict'])
+        _ecg_model.eval()
 
 def scan_prompt_hybrid(prompt: str, decision_threshold: float = None) -> dict:
     """
-    Unified entrypoint that evaluates heuristics and the multiclass ML model
-    to return safety status, threat categories, and explainability triggers.
+    Unified entrypoint for the API. Evaluates heuristics and the new 
+    PyTorch Evidential Conformal Guardrail (ECG) model.
     """
-    if decision_threshold is None:
-        config = load_calibration_config()
-        decision_threshold = config.get("decision_threshold", 0.45)
-
     if not prompt or not isinstance(prompt, str):
         return {
             "is_safe": True,
@@ -32,7 +51,10 @@ def scan_prompt_hybrid(prompt: str, decision_threshold: float = None) -> dict:
             "matched_rules": [],
             "category": "Clean",
             "explanations": [],
-            "evasions_detected": []
+            "evasions_detected": [],
+            "epistemic_uncertainty": 0.0,
+            "prediction_set": ["Clean"],
+            "is_abstain": False
         }
 
     # 1. Run Rule-Based Scanner (Fast Path on Cleaned/De-obfuscated Prompt)
@@ -56,61 +78,66 @@ def scan_prompt_hybrid(prompt: str, decision_threshold: float = None) -> dict:
     if normalize_leetspeak(prompt) != prompt:
         evasions_detected.append("Leetspeak")
 
-     # 2. Run Multiclass ML Model & Explainability (Deep Path)
-    enable_transformer = config.get("enable_transformer", False)
-    transformer_success = False
+    # 2. PyTorch ECG Inference
+    load_ecg_model()
     
-    if enable_transformer:
-        try:
-            from src.core.transformer_classifier import query_transformer_classifier
-            tf_result = query_transformer_classifier(prompt)
-            if tf_result is not None:
-                ml_prob = tf_result["risk_score"]
-                ml_category = tf_result["category"]
-                # Run local explainability in background to provide token highlight support for the frontend
-                ml_report = explain_prompt(prompt)
-                explanations = ml_report['explanations']
-                transformer_success = True
-        except Exception as tf_err:
-            pass
+    with torch.no_grad():
+        alphas, u = _ecg_model([prompt])
+        alphas = alphas[0].cpu().numpy()
+        epistemic_uncertainty = float(u[0].item())
+        
+        prediction_set = []
+        for class_idx in range(2):
+            s_score = _ecg_model.compute_eed_score(alphas[class_idx], prompt)
+            if s_score <= _q_hat:
+                prediction_set.append(class_idx)
 
-    if not transformer_success:
-        ml_report = explain_prompt(prompt)
-        ml_prob = ml_report['threat_probability'] # Use threat probability for security
-        ml_category = ml_report['category']
-        explanations = ml_report['explanations']
+    # 3. Decision Logic with Conformal Abstention
+    ml_prob = alphas[1] / np.sum(alphas)
+    final_risk_score = max(rule_risk, ml_prob)
+    
+    is_abstain = False
+    decision = "PASS"
+    
+    # Mathematical Abstention check
+    if len(prediction_set) > 1 and 0 in prediction_set:
+        is_abstain = True
+        decision = "ABSTAIN"
+    elif len(prediction_set) == 0:
+        # Fallback if conformal set is empty
+        pred = np.argmax(alphas)
+        decision = "BLOCK" if pred == 1 else "PASS"
+    else:
+        pred = prediction_set[0]
+        decision = "BLOCK" if pred == 1 else "PASS"
 
-    # 3. Calibrate ML model probability using prompt metadata
-    calibrated_ml_prob = calibrate_score(ml_prob, prompt)
-
-    # 4. Aggregate risk scores
-    final_risk_score = max(rule_risk, calibrated_ml_prob)
-    is_safe = final_risk_score < decision_threshold
-    decision = "PASS" if is_safe else "BLOCK"
+    # Strict fallback: if heuristics triggered, always block
+    if rules_triggered and decision == "PASS":
+        decision = "BLOCK"
 
     # Define classification category
-    if not is_safe:
-        if rules_triggered:
-            # Map category from rules
-            if "ignore_instruction_override" in matched_rules:
-                category = "Override"
-            elif "roleplay_impersonation" in matched_rules:
-                category = "Roleplay"
-            elif "system_leakage_attempt" in matched_rules:
-                category = "Leakage"
-            else:
-                category = "Rule-Flagged Attack"
-        else:
-            category = ml_category if ml_category != "Clean" else "Model-Flagged Threat"
+    if decision == "BLOCK":
+        category = "Rule-Flagged Attack" if rules_triggered else "Model-Flagged Threat"
+    elif decision == "ABSTAIN":
+        category = "High Uncertainty (OOD)"
     else:
         category = "Clean"
 
+    # Translate class indices to names
+    class_names = {0: "Clean", 1: "Malicious"}
+    pred_set_names = [class_names[idx] for idx in prediction_set]
+    if not pred_set_names:
+        pred_set_names = [class_names[np.argmax(alphas)]]
+
     return {
-        "is_safe": is_safe,
-        "risk_score": round(final_risk_score, 4),
+        "is_safe": (decision == "PASS"),
+        "risk_score": round(float(final_risk_score), 4),
         "decision": decision,
         "matched_rules": matched_rules,
         "category": category,
-        "explanations": explanations,
-        "evasions_detected": evasions_detected
+        "explanations": ["Triggered Evidential Bounds" if is_abstain else "Standard Confidence"],
+        "evasions_detected": evasions_detected,
+        "epistemic_uncertainty": round(epistemic_uncertainty, 4),
+        "prediction_set": pred_set_names,
+        "is_abstain": is_abstain
     }
