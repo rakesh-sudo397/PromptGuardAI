@@ -1,8 +1,54 @@
+# Byte-compiled / optimized / DLL files
 __pycache__/
-*.pyc
-.env
+*.py[cod]
+*$py.class
+
+# C extensions
+*.so
+
+# Distribution / packaging
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual Environments
+.venv/
 venv/
 env/
+ENV/
+env.bak/
+venv.bak/
+
+# Environment Variables
+.env
+.env.local
+
+# IDE & Editor files
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+
+# Temporary & Lock files (Word, Excel, OS)
+~$*
+test_env.py
+.DS_Store
+Thumbs.db
+
+# Heavy Artifacts & Checkpoints
 models/*.pth
 data/research_splits/*.csv
 scratch/
